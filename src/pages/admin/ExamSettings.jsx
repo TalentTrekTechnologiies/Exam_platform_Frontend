@@ -1,5 +1,5 @@
 // src/pages/admin/ExamSettings.jsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Layout from "../../components/Layout/Layout";
 import Card, { CardBody } from "../../components/UI/Card";
 import Button from "../../components/UI/Button";
@@ -9,6 +9,10 @@ import { useExam } from "../../contexts/ExamContext";
 const ExamSettings = () => {
   const { examSettings, updateSettings } = useExam();
   const [settings, setSettings] = useState(examSettings);
+
+  useEffect(() => {
+    setSettings(examSettings);
+  }, [examSettings]);
 
   const handleSave = () => {
     updateSettings(settings);

@@ -8,14 +8,32 @@ const ExamContext = createContext();
 export const useExam = () => useContext(ExamContext);
 
 export const ExamProvider = ({ children }) => {
-  const [questions, setQuestions] = useState(questionsData.questions);
+  const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});
-  const [examSettings, setExamSettings] = useState(settingsData);
-  const [timeLeft, setTimeLeft] = useState(settingsData.duration * 60);
+  const [examSettings, setExamSettings] = useState({
+    examTitle: "Mock EAMCET Exam",
+    duration: 180,
+    passingScore: 35,
+    totalQuestions: 160,
+    instructions: "Standard EAMCET Instructions",
+    physicsCount: 40,
+    chemistryCount: 40,
+    mathsCount: 80,
+    correctMark: 1,
+    negativeMark: 0,
+    startDate: new Date().toISOString().split('T')[0],
+    endDate: new Date().toISOString().split('T')[0]
+  });
+  const [timeLeft, setTimeLeft] = useState(180 * 60);
   const [isSubmitted, setIsSubmitted] = useState(false);
+  const [loading, setLoading] = useState(true);
+
+  const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
   useEffect(() => {
+    fetchData();
+    
     const savedAnswers = localStorage.getItem("exam_answers");
     const savedMarked = localStorage.getItem("exam_marked");
     const savedTime = localStorage.getItem("exam_time_left");
@@ -24,6 +42,35 @@ export const ExamProvider = ({ children }) => {
     if (savedMarked) setMarkedForReview(JSON.parse(savedMarked));
     if (savedTime && !isSubmitted) setTimeLeft(parseInt(savedTime));
   }, []);
+
+  const fetchData = async () => {
+    try {
+      setLoading(true);
+      const token = localStorage.getItem('admin_token');
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+
+      // Fetch Questions
+      const qRes = await fetch(`${API_URL}/admin/questions`, { headers });
+      if (qRes.ok) {
+        const qData = await qRes.json();
+        setQuestions(qData);
+      }
+
+      // Fetch Settings
+      const sRes = await fetch(`${API_URL}/admin/settings`, { headers });
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        if (sData.id) {
+          setExamSettings(sData);
+          setTimeLeft(sData.duration * 60);
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching exam data:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
     if (!isSubmitted) {
@@ -34,10 +81,7 @@ export const ExamProvider = ({ children }) => {
   }, [answers, markedForReview, timeLeft, isSubmitted]);
 
   const saveAnswer = (questionId, answer) => {
-    setAnswers(prev => {
-      const newAnswers = { ...prev, [questionId]: answer };
-      return newAnswers;
-    });
+    setAnswers(prev => ({ ...prev, [questionId]: answer }));
   };
 
   const toggleMarkForReview = (questionId) => {
@@ -58,23 +102,80 @@ export const ExamProvider = ({ children }) => {
     setIsSubmitted(false);
   };
 
-  const updateQuestion = (updatedQuestion) => {
-    setQuestions((prev) =>
-      prev.map((q) => (q.id === updatedQuestion.id ? updatedQuestion : q))
-    );
+  const updateQuestion = async (updatedQuestion) => {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_URL}/admin/questions`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(updatedQuestion)
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setQuestions((prev) => prev.map((q) => (q.id === data.id ? data : q)));
+    }
   };
 
-  const addQuestion = (newQuestion) => {
-    setQuestions((prev) => [...prev, { ...newQuestion, id: Date.now() }]);
+  const addQuestion = async (newQuestion) => {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_URL}/admin/questions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(newQuestion)
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setQuestions((prev) => [...prev, data]);
+    }
   };
 
-  const deleteQuestion = (questionId) => {
-    setQuestions((prev) => prev.filter((q) => q.id !== questionId));
+  const bulkAddQuestions = async (questionsList) => {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_URL}/admin/questions/bulk`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(questionsList)
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setQuestions((prev) => [...prev, ...data]);
+    }
   };
 
-  const updateSettings = (newSettings) => {
-    setExamSettings(newSettings);
-    setTimeLeft(newSettings.duration * 60);
+  const deleteQuestion = async (questionId) => {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_URL}/admin/questions/${questionId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (response.ok) {
+      setQuestions((prev) => prev.filter((q) => q.id !== questionId));
+    }
+  };
+
+  const updateSettings = async (newSettings) => {
+    const token = localStorage.getItem('admin_token');
+    const response = await fetch(`${API_URL}/admin/settings`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`
+      },
+      body: JSON.stringify(newSettings)
+    });
+    if (response.ok) {
+      const data = await response.json();
+      setExamSettings(data);
+      setTimeLeft(data.duration * 60);
+    }
   };
 
   return (
@@ -85,6 +186,7 @@ export const ExamProvider = ({ children }) => {
         markedForReview,
         examSettings,
         timeLeft,
+        loading,
         setTimeLeft,
         isSubmitted,
         saveAnswer,
@@ -93,11 +195,13 @@ export const ExamProvider = ({ children }) => {
         resetExam,
         updateQuestion,
         addQuestion,
+        bulkAddQuestions,
         deleteQuestion,
         updateSettings,
+        refreshData: fetchData
       }}
     >
-      {children}
+      {!loading && children}
     </ExamContext.Provider>
   );
-};
+};
