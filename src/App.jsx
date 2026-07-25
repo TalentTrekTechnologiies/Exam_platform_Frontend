@@ -33,6 +33,7 @@ const ImportQuestions = lazy(() => import("./pages/admin/ImportQuestions"));
 const Publish = lazy(() => import("./pages/admin/Publish"));
 const AddCandidates = lazy(() => import("./pages/admin/AddCandidates"));
 const ReviewPage = lazy(() => import("./pages/admin/ReviewPage"));
+const Settings = lazy(() => import("./pages/admin/Settings"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const Loading = () => (
@@ -83,6 +84,8 @@ function App() {
             <Route path="/admin/monitor" element={<Admin><Monitor /></Admin>} />
             <Route path="/admin/reports" element={<Admin><Reports /></Admin>} />
             <Route path="/admin/review" element={<Admin><ReviewPage /></Admin>} />
+            {/* Previously a dead sidebar link — no route existed for it at all. */}
+            <Route path="/admin/settings" element={<Admin><Settings /></Admin>} />
 
             <Route path="*" element={<Suspense fallback={<Loading />}><NotFound /></Suspense>} />
           </Routes>

@@ -1,16 +1,14 @@
-import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
 import Card from "../../components/UI/Card";
 import Button from "../../components/UI/Button";
-import { FiClock, FiCalendar, FiUpload, FiImage, FiChevronRight, FiCheckCircle, FiShield } from "react-icons/fi";
-import { API_BASE, uploadUrl } from "../../lib/api";
+import { FiClock, FiImage, FiChevronRight, FiCheckCircle, FiShield } from "react-icons/fi";
+import { API_BASE, api, uploadUrl, readAdmin } from "../../lib/api";
 
 export default function CreateExam() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [videoUploading, setVideoUploading] = useState(false);
 
   const [exam, setExam] = useState({
     collegeName: "",
@@ -22,71 +20,35 @@ export default function CreateExam() {
     positiveMarks: 1,
     negativeMarking: false,
     negativeMarks: 0,
-    introVideo: "",
     // ✅ STEP 1: ADD CAMERA & MIC STATE
     enableCamera: false,
     enableMic: false
   });
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setUploading(true);
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch(`${API_BASE}/upload/logo`, {
-        method: "POST",
-        body: formData
-      });
-      const body = await res.json();
-
-      if (!res.ok) {
-        alert(body.message || "Logo upload failed.");
-        return;
+  // Branding is set once on the Institution Settings page and reused for every
+  // exam from here on — this used to be a blank upload field on every single
+  // exam, which meant re-choosing the same logo file again and again.
+  useEffect(() => {
+    (async () => {
+      try {
+        const me = await api.get("/admin/me");
+        setExam((prev) => ({
+          ...prev,
+          collegeName: prev.collegeName || me.collegeName || "",
+          collegeLogo: prev.collegeLogo || me.collegeLogo || "",
+        }));
+      } catch {
+        const cached = readAdmin();
+        if (cached) {
+          setExam((prev) => ({
+            ...prev,
+            collegeName: prev.collegeName || cached.collegeName || "",
+            collegeLogo: prev.collegeLogo || cached.collegeLogo || "",
+          }));
+        }
       }
-      setExam(prev => ({ ...prev, collegeLogo: body.filename }));
-    } catch (err) {
-      alert("Logo upload failed.");
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const handleVideoUpload = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-
-    setVideoUploading(true);
-
-    const formData = new FormData();
-    formData.append("file", file);
-
-    try {
-      const res = await fetch(`${API_BASE}/upload/video`, {
-        method: "POST",
-        body: formData
-      });
-
-      const body = await res.json();
-
-      if (!res.ok) {
-        alert(body.message || "Video upload failed.");
-        return;
-      }
-
-      setExam(prev => ({
-        ...prev,
-        introVideo: body.filename
-      }));
-
-    } catch (err) {
-      alert("Video upload failed.");
-    } finally {
-      setVideoUploading(false);
-    }
-  };
+    })();
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -148,7 +110,11 @@ export default function CreateExam() {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-6 items-start">
               <div className="md:col-span-1">
                 <label className="block text-xs font-bold text-gray-400 uppercase mb-3">College Logo</label>
-                <div className="relative group w-32 h-32 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center bg-gray-50 hover:bg-indigo-50 transition-all overflow-hidden">
+                {/* Read-only here on purpose — set once in Institution Settings and
+                    reused for every exam automatically. Previously this was a blank
+                    upload field on every single exam, which meant choosing the same
+                    file again and again. */}
+                <div className="w-32 h-32 border-2 border-dashed border-gray-200 rounded-2xl flex flex-col items-center justify-center bg-gray-50 overflow-hidden">
                   {exam.collegeLogo ? (
                     /* The upload returns a bare filename; without resolving it to
                        the server's /uploads path the browser treats it as relative
@@ -157,37 +123,13 @@ export default function CreateExam() {
                   ) : (
                     <div className="text-center p-2">
                       <FiImage className="text-2xl text-gray-300 mx-auto mb-1" />
-                      <span className="text-[10px] font-medium text-gray-500">{uploading ? "..." : "Upload"}</span>
+                      <span className="text-[10px] font-medium text-gray-500">No logo set</span>
                     </div>
                   )}
-                  <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={handleFileUpload} />
                 </div>
-
-                <div className="mt-4">
-                  <label className="block text-xs font-bold text-gray-400 uppercase mb-2">
-                    Intro Video (30 sec)
-                  </label>
-
-                  <div className="relative w-full h-20 border-2 border-dashed border-gray-200 rounded-xl flex items-center justify-center bg-gray-50 hover:bg-indigo-50 transition-all">
-                    {exam.introVideo ? (
-                      <span className="text-xs font-medium text-green-600 flex items-center gap-1">
-                        Video Uploaded ✅
-                      </span>
-                    ) : (
-                      <span className="text-xs text-gray-500">
-                        {videoUploading ? "Uploading..." : "Upload Video"}
-                      </span>
-                    )}
-
-                    <input
-                      type="file"
-                      accept="video/*"
-                      className="absolute inset-0 opacity-0 cursor-pointer"
-                      onChange={handleVideoUpload}
-                      disabled={videoUploading}
-                    />
-                  </div>
-                </div>
+                <Link to="/admin/settings" className="mt-2 block text-center text-xs font-semibold text-indigo-600 hover:underline">
+                  {exam.collegeLogo ? "Change in Settings" : "Set your logo →"}
+                </Link>
               </div>
 
               <div className="md:col-span-3 space-y-4">
@@ -304,7 +246,7 @@ export default function CreateExam() {
             <Button 
               type="submit" 
               className="px-10 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold flex items-center gap-2 transition-all shadow-lg active:scale-95" 
-              disabled={loading || uploading || videoUploading}
+              disabled={loading}
             >
               {loading ? "Saving..." : <>Publish & Next <FiChevronRight /></>}
             </Button>
