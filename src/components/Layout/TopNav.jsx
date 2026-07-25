@@ -3,18 +3,18 @@ import React, { useState, useRef, useEffect } from "react";
 import { FiMenu, FiBell, FiUser, FiChevronDown, FiLogOut } from "react-icons/fi";
 import { useAuth } from "../../contexts/AuthContext";
 import { useNavigate } from "react-router-dom";
+import { readAdmin } from "../../lib/api";
 
 const TopNav = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
+  // ✅ STEP 2: ADD THIS AT TOP
+  const admin = readAdmin();
+
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const dropdownRef = useRef(null);
   const notificationRef = useRef(null);
-
-  // Get admin name from localStorage or user
-  const adminData = JSON.parse(localStorage.getItem('admin_data') || '{}');
-  const adminName = adminData?.name || user?.name || "Admin User";
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -31,7 +31,7 @@ const TopNav = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
   }, []);
 
   const handleLogout = () => {
-    logout(); // Your logout function clears everything
+    logout(); 
     navigate("/admin/login");
   };
 
@@ -46,11 +46,6 @@ const TopNav = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
           >
             <FiMenu className="text-gray-600 text-xl" />
           </button>
-          {!isMobile && (
-            <div className="hidden md:block">
-             {/* // <h2 className="text-base md:text-lg font-semibold text-gray-700">EAMCET Admin Portal</h2> */}
-            </div>
-          )}
         </div>
 
         {/* Right side - User */}
@@ -64,7 +59,6 @@ const TopNav = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
               <FiBell className="text-gray-600 text-xl" />
             </button>
 
-            {/* Notification Dropdown */}
             {showNotifications && (
               <div className="absolute right-0 mt-2 w-80 bg-white rounded-lg shadow-xl border border-gray-100 z-50">
                 <div className="p-3 border-b border-gray-100">
@@ -88,7 +82,8 @@ const TopNav = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
                   <FiUser className="text-white text-sm md:text-lg" />
                 </div>
                 <div className="hidden md:block text-left">
-                  <p className="text-sm font-medium text-gray-700">{adminName}</p>
+                  {/* 🔥 REPLACED: adminName with admin?.email */}
+                  <p className="text-sm font-medium text-gray-700">{admin?.email}</p>
                   <p className="text-xs text-gray-500">Administrator</p>
                 </div>
                 <FiChevronDown className="text-gray-500 text-sm" />
@@ -99,7 +94,8 @@ const TopNav = ({ sidebarOpen, setSidebarOpen, isMobile }) => {
             {showDropdown && (
               <div className="absolute right-0 mt-2 w-56 bg-white rounded-lg shadow-xl border border-gray-100 z-50">
                 <div className="p-3 border-b border-gray-100">
-                  <p className="font-medium text-gray-800">{adminName}</p>
+                  {/* 🔥 REPLACED: adminName with admin?.email */}
+                  <p className="font-medium text-gray-800">{admin?.email}</p>
                   <p className="text-xs text-gray-500">Administrator</p>
                 </div>
                 <div className="py-2">

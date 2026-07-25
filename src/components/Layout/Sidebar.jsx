@@ -9,10 +9,18 @@ import {
   FiBarChart2,
   FiLogOut,
   FiFileText,
+  FiActivity,
+  FiUploadCloud,
+  FiSend,
+  FiUserPlus,
 } from "react-icons/fi";
 import { useAuth } from "../../contexts/AuthContext";
+import { API_BASE, readAdmin } from "../../lib/api";
 
 const Sidebar = ({ isOpen, isMobile, onClose }) => {
+  // ✅ STEP 3: ADD THIS
+  const admin = readAdmin();
+
   const navigate = useNavigate();
   const { logout } = useAuth();
 
@@ -20,12 +28,16 @@ const Sidebar = ({ isOpen, isMobile, onClose }) => {
     { path: "/admin/dashboard", icon: FiHome, label: "Dashboard" },
     { path: "/admin/questions", icon: FiBook, label: "Questions" },
     { path: "/admin/students", icon: FiUsers, label: "Students" },
+    { path: "/admin/students/add", icon: FiUserPlus, label: "Add Candidates" },
+    { path: "/admin/questions/import", icon: FiUploadCloud, label: "Import Paper" },
+    { path: "/admin/publish", icon: FiSend, label: "Publish & Share" },
+    { path: "/admin/monitor", icon: FiActivity, label: "Live Monitor" },
     { path: "/admin/settings", icon: FiSettings, label: "Exam Settings" },
     { path: "/admin/reports", icon: FiBarChart2, label: "Reports" },
   ];
 
   const handleLogout = () => {
-    logout(); // Your logout function clears everything
+    logout();
     navigate("/admin/login");
     if (isMobile && onClose) {
       onClose();
@@ -49,11 +61,23 @@ const Sidebar = ({ isOpen, isMobile, onClose }) => {
         <div className="flex flex-col h-full">
           <div className="p-6 border-b border-gray-800">
             <div className="flex items-center space-x-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
-                <FiFileText className="text-white text-xl" />
+              {/* 🔥 UPDATED: Dynamic Logo from server */}
+              <div className="w-10 h-10 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center overflow-hidden">
+                {admin?.collegeLogo ? (
+                  <img 
+                    src={`${API_BASE}/uploads/${admin?.collegeLogo}`} 
+                    alt="Logo" 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <FiFileText className="text-white text-xl" />
+                )}
               </div>
               <div>
-                <h1 className="text-xl font-bold">Mock EAMCET</h1>
+                {/* 🔥 REPLACE: Mock EAMCET with admin?.collegeName */}
+                <h1 className="text-xl font-bold truncate max-w-[140px]">
+                  {admin?.collegeName || "Mock EAMCET"}
+                </h1>
                 <p className="text-xs text-gray-400">Admin Portal</p>
               </div>
             </div>
@@ -64,6 +88,9 @@ const Sidebar = ({ isOpen, isMobile, onClose }) => {
               <NavLink
                 key={item.path}
                 to={item.path}
+                // Exact matching: without this, /admin/questions also matches
+                // /admin/questions/import and two entries appear active at once.
+                end
                 onClick={isMobile ? onClose : undefined}
                 className={({ isActive }) => `
                   flex items-center space-x-3 px-4 py-3 rounded-lg transition-all duration-200

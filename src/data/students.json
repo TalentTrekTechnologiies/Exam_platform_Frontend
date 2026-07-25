@@ -1,9 +1,0 @@
-
-{
-  "duration": 180,
-  "examName": "EAMCET MOCK TEST",
-  "totalQuestions": 15,
-  "subjects": ["Physics", "Chemistry", "Mathematics"],
-  "marksPerQuestion": 1,
-  "negativeMarking": false
-}

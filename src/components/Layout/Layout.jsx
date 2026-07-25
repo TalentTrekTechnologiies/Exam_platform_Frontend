@@ -3,8 +3,12 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "./Sidebar";
 import TopNav from "./TopNav";
 import MobileNav from "./MobileNav";
+import { readAdmin } from "../../lib/api";
 
-const Layout = ({ children, title }) => {
+const Layout = ({ children, title, subtitle }) => {
+  // ADDED: Retrieve admin data from localStorage
+  const admin = readAdmin();
+
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
 
@@ -37,7 +41,12 @@ const Layout = ({ children, title }) => {
             {title && (
               <div className="mb-6">
                 <h1 className="text-2xl md:text-3xl font-bold text-gray-800">{title}</h1>
-                <p className="text-gray-500 mt-1">Welcome back to Mock EAMCET Dashboard</p>
+                {/* UPDATED: Dynamic welcome message based on admin data */}
+                <p className="text-gray-500 mt-1">
+                  {/* A greeting belongs on the dashboard, not under "Publish
+                      Exam". Pages say what they are for, or say nothing. */}
+                  {subtitle ?? admin?.collegeName ?? ""}
+                </p>
               </div>
             )}
             {children}

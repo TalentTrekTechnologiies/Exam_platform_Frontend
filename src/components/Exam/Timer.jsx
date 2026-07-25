@@ -1,36 +1,38 @@
-// src/components/Exam/Timer.jsx
-import React, { useEffect } from 'react';
-import { FiClock } from 'react-icons/fi';
+import React from "react";
 
-const Timer = ({ timeLeft, setTimeLeft, onTimeEnd }) => {
-  useEffect(() => {
-    if (timeLeft <= 0) {
-      onTimeEnd();
-      return;
-    }
+/**
+ * Display only. The countdown lives in ExamContext and is reconciled against the
+ * server clock, so nothing here can be tampered with to buy time.
+ *
+ * Monospaced digits and a fixed width mean the masthead never shifts as seconds
+ * tick — a jittering clock is the fastest way to make a screen feel cheap.
+ */
+const Timer = ({ seconds }) => {
+  const known = seconds != null;
+  const safe = known ? Math.max(0, seconds) : 0;
 
-    const timer = setInterval(() => {
-      setTimeLeft(prev => prev - 1);
-    }, 1000);
+  const hrs = Math.floor(safe / 3600);
+  const mins = Math.floor((safe % 3600) / 60);
+  const secs = safe % 60;
+  const pad = (n) => String(n).padStart(2, "0");
 
-    return () => clearInterval(timer);
-  }, [timeLeft, setTimeLeft, onTimeEnd]);
-
-  const formatTime = (seconds) => {
-    const hrs = Math.floor(seconds / 3600);
-    const mins = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-    return `${hrs.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const isLowTime = timeLeft < 300; // Less than 5 minutes
+  const critical = known && safe <= 60;
+  const low = known && safe <= 300;
 
   return (
-    <div className={`flex items-center gap-2 px-4 py-2 rounded-lg font-mono text-xl font-bold ${
-      isLowTime ? 'bg-red-500 text-white animate-pulse' : 'bg-gray-100 text-gray-800'
-    }`}>
-      <FiClock className={isLowTime ? 'text-white' : 'text-gray-600'} />
-      <span>{formatTime(timeLeft)}</span>
+    <div
+      role="timer"
+      aria-live={critical ? "assertive" : "off"}
+      aria-label={known ? `Time remaining: ${hrs} hours ${mins} minutes ${secs} seconds` : "Time remaining unavailable"}
+      className={`rounded-exam px-3 py-1.5 text-[17px] font-semibold tabular tracking-tight
+                  transition-colors duration-300
+                  ${critical
+                    ? "bg-status-unanswered text-white"
+                    : low
+                    ? "bg-amber-500 text-amber-950"
+                    : "bg-white/10 text-white"}`}
+    >
+      {known ? `${pad(hrs)}:${pad(mins)}:${pad(secs)}` : "--:--:--"}
     </div>
   );
 };

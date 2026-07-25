@@ -1,13 +1,16 @@
-// src/pages/admin/Dashboard.jsx
 import React, { useState, useEffect } from "react";
 import Layout from "../../components/Layout/Layout";
 import Card from "../../components/UI/Card";
 import { BarChart } from "../../components/UI/Chart";
-import { FiUsers, FiBook, FiClock, FiAward } from "react-icons/fi";
+import { FiUsers, FiBook, FiClock, FiAward, FiPlusCircle, FiList, FiCheckSquare, FiCalendar } from "react-icons/fi";
 import { useExam } from "../../contexts/ExamContext";
+import { API_BASE, readAdmin } from "../../lib/api";
 
 const Dashboard = () => {
   const { questions, examSettings } = useExam();
+  
+  // ✅ STEP 2: USE REAL ADMIN DATA
+  const admin = readAdmin();
   
   const [stats, setStats] = useState({
     totalStudents: 0,
@@ -27,41 +30,38 @@ const Dashboard = () => {
   const [recentActivities, setRecentActivities] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Fetch all data from APIs
   useEffect(() => {
     fetchDashboardData();
   }, []);
 
   const fetchDashboardData = async () => {
     try {
-      const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
+      const API_URL = API_BASE;
       const token = localStorage.getItem('admin_token');
       
-      // Fetch students count
+      // These endpoints return an object, not a bare number. Unwrapping matters:
+      // handing React the object itself throws "Objects are not valid as a React
+      // child" and takes the whole dashboard down.
       const studentsRes = await fetch(`${API_URL}/admin/students/count`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const totalStudents = studentsRes.ok ? await studentsRes.json() : 0;
-      
-      // Fetch average score
+      const totalStudents = studentsRes.ok ? Number((await studentsRes.json())?.count ?? 0) : 0;
+
       const avgScoreRes = await fetch(`${API_URL}/admin/exams/average-score`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const avgScore = avgScoreRes.ok ? await avgScoreRes.json() : 0;
+      const avgScore = avgScoreRes.ok ? Number((await avgScoreRes.json())?.average ?? 0) : 0;
       
-      // Fetch recent activities
       const activitiesRes = await fetch(`${API_URL}/admin/activities/recent`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const activities = activitiesRes.ok ? await activitiesRes.json() : [];
       
-      // Fetch chart data
       const chartRes = await fetch(`${API_URL}/admin/charts/monthly`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const chartDataFromAPI = chartRes.ok ? await chartRes.json() : null;
       
-      // Update stats
       setStats({
         totalStudents: totalStudents,
         questionsBank: questions.length,
@@ -69,10 +69,8 @@ const Dashboard = () => {
         examDuration: examSettings?.duration || 180
       });
       
-      // Update activities
       setRecentActivities(activities);
       
-      // Update chart data
       if (chartDataFromAPI) {
         setChartData({
           labels: chartDataFromAPI.labels,
@@ -91,15 +89,16 @@ const Dashboard = () => {
   };
 
   const displayStats = [
-    { title: "Total Students", value: stats.totalStudents, change: "", icon: FiUsers, color: "bg-indigo-500" },
-    { title: "Questions Bank", value: stats.questionsBank, change: "", icon: FiBook, color: "bg-green-500" },
-    { title: "Avg. Score", value: `${stats.avgScore}%`, change: "", icon: FiAward, color: "bg-yellow-500" },
-    { title: "Exam Duration", value: `${stats.examDuration} min`, change: "", icon: FiClock, color: "bg-purple-500" },
+    { title: "Total Students", value: stats.totalStudents, icon: FiUsers, color: "bg-indigo-500" },
+    { title: "Questions Bank", value: stats.questionsBank, icon: FiBook, color: "bg-green-500" },
+    { title: "Avg. Score", value: `${stats.avgScore}%`, icon: FiAward, color: "bg-yellow-500" },
+    { title: "Exam Duration", value: `${stats.examDuration} min`, icon: FiClock, color: "bg-purple-500" },
   ];
 
   if (loading) {
     return (
-      <Layout title="Dashboard Overview">
+      // ✅ STEP 3: REPLACE HARDCODED TITLE
+      <Layout title={admin?.collegeName || "Dashboard Overview"}>
         <div className="flex justify-center items-center h-96">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-600"></div>
         </div>
@@ -108,7 +107,63 @@ const Dashboard = () => {
   }
 
   return (
-    <Layout title="Dashboard Overview">
+    // ✅ STEP 3: REPLACE HARDCODED TITLE
+    <Layout title={admin?.collegeName || "Dashboard Overview"}>
+      
+      {/* Profile & Logo Section */}
+      <div className="flex items-center justify-between mb-8 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
+        <div className="flex items-center gap-4">
+          {/* ✅ STEP 5: DISPLAY COLLEGE LOGO */}
+          <img
+            src={`${API_BASE}/uploads/${admin?.collegeLogo}`}
+            alt="logo"
+            className="border border-slate-200 shadow-sm"
+            style={{ width: "50px", height: "50px", borderRadius: "50%", objectFit: "cover" }}
+            onError={(e) => { e.target.src = "https://via.placeholder.com/50"; }} // Fallback if image fails
+          />
+          <div>
+            <h2 className="text-lg font-bold text-slate-800 leading-none">{admin?.collegeName}</h2>
+            {/* ✅ STEP 4: DISPLAY ADMIN EMAIL */}
+            <p className="text-sm text-slate-500 mt-1">{admin?.email}</p>
+          </div>
+        </div>
+        <div className="hidden md:block text-right">
+          <p className="text-xs font-semibold text-indigo-600 uppercase tracking-wider">Administrator Access</p>
+          <p className="text-xs text-slate-400">Authenticated Session</p>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap gap-4 mb-6">
+        <button
+          onClick={() => window.location.href = "/admin/create-exam"}
+          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
+        >
+          <FiPlusCircle /> Create Exam
+        </button>
+
+        <button
+          onClick={() => window.location.href = "/admin/sections"}
+          className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
+        >
+          <FiList /> Add Sections
+        </button>
+
+        <button
+          onClick={() => window.location.href = "/admin/questions"}
+          className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
+        >
+          <FiCheckSquare /> Add Questions
+        </button>
+
+        <button
+          onClick={() => window.location.href = "/admin/slots"}
+          className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
+        >
+          <FiCalendar /> Create Slot
+        </button>
+      </div>
+
+      {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {displayStats.map((stat, idx) => (
           <Card key={idx} className="p-6">
@@ -135,15 +190,19 @@ const Dashboard = () => {
         <Card className="p-6">
           <h3 className="font-semibold text-gray-800 mb-4">Recent Activity</h3>
           <div className="space-y-4">
-            {recentActivities.map((activity) => (
-              <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div>
-                  <p className="font-medium text-gray-800">{activity.studentName} {activity.action}</p>
-                  <p className="text-xs text-gray-400">{activity.time}</p>
+            {recentActivities.length > 0 ? (
+              recentActivities.map((activity) => (
+                <div key={activity.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div>
+                    <p className="font-medium text-gray-800">{activity.studentName} {activity.action}</p>
+                    <p className="text-xs text-gray-400">{activity.time}</p>
+                  </div>
+                  {activity.score && <span className="text-sm text-green-600">Score: {activity.score}%</span>}
                 </div>
-                {activity.score && <span className="text-sm text-green-600">Score: {activity.score}%</span>}
-              </div>
-            ))}
+              ))
+            ) : (
+              <p className="text-gray-400 text-center py-4">No recent activity.</p>
+            )}
           </div>
         </Card>
       </div>

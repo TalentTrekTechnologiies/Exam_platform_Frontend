@@ -5,25 +5,38 @@
 
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    @apply bg-gray-50 text-gray-900 antialiased;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  /* Numerals in the timer, palette and score must not jitter as they change. */
+  .tabular,
+  time,
+  [role="timer"] {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum" 1;
+  }
+
+  /* A visible, consistent focus ring — candidates do navigate by keyboard. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-offset-2 ring-primary-600;
   }
 
   ::-webkit-scrollbar {
-    width: 8px;
-    height: 8px;
+    width: 10px;
+    height: 10px;
   }
 
   ::-webkit-scrollbar-track {
-    @apply bg-gray-100 rounded-full;
+    @apply bg-transparent;
   }
 
   ::-webkit-scrollbar-thumb {
-    @apply bg-gray-400 rounded-full;
+    @apply bg-gray-300 rounded-full border-2 border-solid border-transparent bg-clip-content;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-500;
+    @apply bg-gray-400 bg-clip-content;
   }
 }
 
@@ -43,5 +56,40 @@
   .card {
     @apply bg-white rounded-xl shadow-sm border border-gray-100 hover:shadow-md transition-shadow duration-200;
   }
-  
+
+  /* ── Exam shell ─────────────────────────────────────────────────────────
+     Borders rather than shadows. Definition without softness is what makes
+     the screen read as an instrument instead of a marketing page. */
+
+  .exam-label {
+    @apply text-micro font-semibold uppercase text-gray-500;
+  }
+
+  /* Line numbers, hall tickets, error codes — anything a person reads back
+     character by character, where a proportional font invites transcription
+     mistakes between 1/l and 0/O. */
+  .mono {
+    @apply font-mono tracking-tight;
+  }
+
+  .exam-action {
+    @apply px-4 py-2.5 rounded-exam border text-sm font-semibold
+           transition-colors duration-150 disabled:opacity-40
+           disabled:cursor-not-allowed select-none;
+  }
+
+  .exam-action-quiet {
+    @apply exam-action bg-white border-gray-300 text-gray-700
+           hover:bg-gray-50 hover:border-gray-400;
+  }
+
+  .exam-action-primary {
+    @apply exam-action bg-primary-700 border-primary-700 text-white
+           hover:bg-primary-800 hover:border-primary-800;
+  }
+
+  .exam-action-review {
+    @apply exam-action bg-white border-status-marked/40 text-status-marked
+           hover:bg-status-markedSoft;
+  }
 }

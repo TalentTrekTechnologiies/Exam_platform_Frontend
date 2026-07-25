@@ -1,429 +1,661 @@
-// src/pages/admin/QuestionManagement.jsx
-import React, { useState, useRef } from "react";
+import React, { useState, useEffect, useMemo } from "react";
+import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
-import Card, { CardHeader, CardBody } from "../../components/UI/Card";
-import Button from "../../components/UI/Button";
-import Input from "../../components/UI/Input";
 import Modal from "../../components/UI/Modal";
-import { FiEdit2, FiTrash2, FiPlus, FiSearch, FiUpload, FiImage, FiX } from "react-icons/fi";
-import { useExam } from "../../contexts/ExamContext";
-import * as XLSX from 'xlsx';
+import { API_BASE, api, uploadUrl } from "../../lib/api";
+import {
+  FiEdit2, FiTrash2, FiPlus, FiSearch, FiImage, FiX, FiUploadCloud,
+  FiAlertTriangle, FiCheck, FiInbox,
+} from "react-icons/fi";
+
+/**
+ * The question bank for one exam.
+ *
+ * This is where staff spend most of their time, and where the most damaging
+ * mistakes are made — not crashes, but quiet ones: an answer key pointing at a
+ * blank option, a section left twenty questions short, a marking scheme that
+ * silently differs between typed and imported questions. None of those announce
+ * themselves at build time; they surface on exam day, against real candidates.
+ * So this screen is built to make the shape of the paper visible and to refuse
+ * the saves that cannot be recovered from.
+ */
+
+const LETTERS = ["A", "B", "C", "D"];
+
+const emptyForm = (defaults) => ({
+  text: "",
+  options: ["", "", "", ""],
+  optionImages: [null, null, null, null],
+  correctAnswer: "",
+  sectionId: "",
+  imagePreview: null,
+  marks: defaults.marks,
+  negativeMarks: defaults.negativeMarks,
+});
 
 const QuestionManagement = () => {
-  const { questions, addQuestion, updateQuestion, deleteQuestion, bulkAddQuestions } = useExam();
+  const navigate = useNavigate();
+  const examId = localStorage.getItem("examId");
+
+  const [questions, setQuestions] = useState([]);
+  const [sections, setSections] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [selectedSubject, setSelectedSubject] = useState("all");
+  const [sectionFilter, setSectionFilter] = useState("all");
+
   const [modalOpen, setModalOpen] = useState(false);
-  const [csvModalOpen, setCsvModalOpen] = useState(false);
-  const [editingQuestion, setEditingQuestion] = useState(null);
-  const [csvData, setCsvData] = useState([]);
-  const [csvPreview, setCsvPreview] = useState([]);
-  const fileInputRef = useRef(null);
-  const [formData, setFormData] = useState({
-    text: "",
-    options: ["", "", "", ""],
-    correctAnswer: "",
-    subject: "Physics",
-    image: null,
-    imagePreview: null
-  });
+  const [editing, setEditing] = useState(null);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
-  const subjects = ["Physics", "Chemistry", "Mathematics", "Biology", "Computer Science"];
+  const [csvFile, setCsvFile] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState(null);
 
-  // Filter questions dynamically based on available subjects
-  const availableSubjects = [...new Set(questions.map(q => q.subject))];
-  const filterSubjects = availableSubjects.length > 0 ? availableSubjects : subjects;
+  /**
+   * The exam's default marking scheme, used to seed new questions.
+   *
+   * Read defensively: a malformed value here used to throw inside the save
+   * handler, which meant a corrupt localStorage entry took out the ability to
+   * add questions at all, with nothing on screen to explain why.
+   */
+  const defaults = useMemo(() => {
+    let rules = {};
+    try {
+      rules = JSON.parse(localStorage.getItem("examRules")) || {};
+    } catch {
+      rules = {};
+    }
+    return {
+      marks: Number(rules.positiveMarks) || 1,
+      negativeMarks: rules.negativeMarking ? Math.abs(Number(rules.negativeMarks) || 0) : 0,
+    };
+  }, []);
 
-  const filteredQuestions = questions.filter((q) => {
-    const matchesSearch = q.text.toLowerCase().includes(search.toLowerCase());
-    const matchesSubject = selectedSubject === "all" || q.subject === selectedSubject;
-    return matchesSearch && matchesSubject;
-  });
+  const [formData, setFormData] = useState(() => emptyForm(defaults));
 
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setFormData({
-          ...formData,
-          image: file,
-          imagePreview: reader.result
-        });
-      };
-      reader.readAsDataURL(file);
+  useEffect(() => {
+    if (!examId) { setLoading(false); return; }
+    (async () => {
+      setLoading(true);
+      try {
+        const [secs, qs] = await Promise.all([
+          api.get(`/admin/section/${examId}`),
+          api.get(`/admin/question/${examId}`),
+        ]);
+        setSections(Array.isArray(secs) ? secs : []);
+        setQuestions(Array.isArray(qs) ? qs : []);
+      } catch (e) {
+        setNotice({ tone: "error", title: "Could not load this exam's questions.", detail: e.message });
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [examId]);
+
+  const reloadQuestions = async () => {
+    try {
+      const qs = await api.get(`/admin/question/${examId}`);
+      setQuestions(Array.isArray(qs) ? qs : []);
+    } catch {
+      /* the list is stale, not wrong — the save itself already reported. */
     }
   };
 
-  const removeImage = () => {
-    setFormData({
-      ...formData,
-      image: null,
-      imagePreview: null
+  const sectionName = (id) => sections.find((s) => s.id === id)?.name || "Unassigned";
+
+  // ── Paper shape ─────────────────────────────────────────────────────────
+  // A per-section tally with the marks each section carries. Staff building an
+  // EAMCET or NQT paper work to a blueprint (40 Physics, 40 Chemistry, 80
+  // Maths); without this they are counting rows by hand.
+  const coverage = useMemo(() => {
+    const bySection = new Map();
+    let totalMarks = 0;
+    for (const q of questions) {
+      const key = q.sectionId ?? null;
+      const entry = bySection.get(key) || { id: key, count: 0, marks: 0 };
+      entry.count += 1;
+      entry.marks += Number(q.marks) || 0;
+      bySection.set(key, entry);
+      totalMarks += Number(q.marks) || 0;
+    }
+    // Sections with no questions yet still belong in the list — an empty
+    // section is exactly the gap this summary exists to reveal.
+    for (const s of sections) if (!bySection.has(s.id)) bySection.set(s.id, { id: s.id, count: 0, marks: 0 });
+    return { rows: [...bySection.values()], totalMarks };
+  }, [questions, sections]);
+
+  const filtered = useMemo(() => {
+    const needle = search.trim().toLowerCase();
+    return questions.filter((q) => {
+      const matchesSearch = !needle || q.questionText?.toLowerCase().includes(needle);
+      const matchesSection = sectionFilter === "all" || String(q.sectionId) === sectionFilter;
+      return matchesSearch && matchesSection;
     });
+  }, [questions, search, sectionFilter]);
+
+  // ── Uploads ─────────────────────────────────────────────────────────────
+
+  const uploadImage = async (file) => {
+    if (!file) return null;
+    setUploading(true);
+    try {
+      const body = new FormData();
+      body.append("file", file);
+      const res = await fetch(`${API_BASE}/upload/logo`, { method: "POST", body });
+      const parsed = await res.json();
+      if (!res.ok) { setFormError(parsed.message || "That image could not be uploaded."); return null; }
+      return parsed.filename;
+    } catch {
+      setFormError("Could not reach the server to upload that image.");
+      return null;
+    } finally {
+      setUploading(false);
+    }
   };
 
-  const handleSave = async () => {
-    const questionData = {
-      text: formData.text,
-      options: formData.options,
-      correctAnswer: formData.correctAnswer,
-      subject: formData.subject,
-      image: formData.imagePreview || null
+  const handleCsvImport = async () => {
+    if (!csvFile) { setNotice({ tone: "warn", title: "Choose a CSV file first." }); return; }
+    setImporting(true);
+    setNotice(null);
+    try {
+      const body = new FormData();
+      body.append("file", csvFile);
+      body.append("examId", examId);
+      const res = await fetch(`${API_BASE}/admin/question/upload`, { method: "POST", body });
+      const report = await res.json();
+
+      if (!res.ok) {
+        setNotice({ tone: "error", title: report.message || "That file could not be imported." });
+        return;
+      }
+
+      // Which rows were rejected, and why. A silent "success" on a file where
+      // every row failed is how a paper ends up short on exam day.
+      setNotice({
+        tone: report.errors?.length ? "warn" : "ok",
+        title: report.summary,
+        lines: (report.errors || []).slice(0, 15).map((e) => `Line ${e.line}: ${e.reason}`),
+        more: report.skipped > 15 ? report.skipped - 15 : 0,
+      });
+      setCsvFile(null);
+      reloadQuestions();
+    } catch {
+      setNotice({ tone: "error", title: "Could not reach the server." });
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  // ── Saving ──────────────────────────────────────────────────────────────
+
+  /**
+   * Refuses the saves that produce an unanswerable question.
+   *
+   * The last check is the one that matters: an answer key pointing at an empty
+   * option cannot be detected later. Marking would run confidently, and every
+   * candidate would be graded against a choice that was never on their screen.
+   */
+  const validate = () => {
+    const filled = formData.options.map((o, i) => Boolean((o || "").trim()) || Boolean(formData.optionImages[i]));
+
+    if (!formData.text.trim() && !formData.imagePreview) return "The question needs text, or an image to stand in for it.";
+    if (!formData.sectionId) return "Choose the section this question belongs to.";
+    if (filled.filter(Boolean).length < 2) return "A question needs at least two options.";
+    if (!formData.correctAnswer) return "Mark which option is correct — a question without a key cannot be marked.";
+
+    const keyIndex = LETTERS.indexOf(formData.correctAnswer);
+    if (!filled[keyIndex]) {
+      return `Option ${formData.correctAnswer} is marked correct but is empty. Candidates would be graded against a blank choice.`;
+    }
+    if (!(Number(formData.marks) > 0)) return "Marks must be greater than zero.";
+    return null;
+  };
+
+  const handleSave = async (addAnother) => {
+    const problem = validate();
+    if (problem) { setFormError(problem); return; }
+
+    setFormError("");
+    setSaving(true);
+
+    const payload = {
+      examId: Number(examId),
+      sectionId: Number(formData.sectionId),
+      questionText: formData.text,
+      questionImage: formData.imagePreview || null,
+      optionA: formData.options[0], optionB: formData.options[1],
+      optionC: formData.options[2], optionD: formData.options[3],
+      optionAImage: formData.optionImages[0] || null, optionBImage: formData.optionImages[1] || null,
+      optionCImage: formData.optionImages[2] || null, optionDImage: formData.optionImages[3] || null,
+      correctAnswer: formData.correctAnswer.toUpperCase(),
+      marks: Number(formData.marks),
+      negativeMarks: Math.abs(Number(formData.negativeMarks) || 0),
     };
 
-    if (editingQuestion) {
-      await updateQuestion({ ...editingQuestion, ...questionData });
-    } else {
-      await addQuestion(questionData);
+    try {
+      if (editing) await api.put(`/admin/question/${editing.id}`, payload);
+      else await api.post("/admin/question", payload);
+
+      await reloadQuestions();
+
+      if (addAnother) {
+        // Keep the section and marking scheme — consecutive questions almost
+        // always share both, and re-picking them each time is the slowest part
+        // of typing a paper by hand.
+        const { sectionId, marks, negativeMarks } = formData;
+        setFormData({ ...emptyForm(defaults), sectionId, marks, negativeMarks });
+        setEditing(null);
+        setNotice({ tone: "ok", title: "Question saved. Add the next one." });
+      } else {
+        setModalOpen(false);
+      }
+    } catch (e) {
+      // Previously an `if (res.ok)` with no else branch: a rejected save closed
+      // the dialog and looked exactly like a successful one.
+      setFormError(e.message || "The server rejected this question.");
+    } finally {
+      setSaving(false);
     }
-    setModalOpen(false);
-    resetForm();
   };
 
-  const resetForm = () => {
-    setEditingQuestion(null);
-    setFormData({
-      text: "",
-      options: ["", "", "", ""],
-      correctAnswer: "",
-      subject: subjects[0],
-      image: null,
-      imagePreview: null
-    });
+  const handleDelete = async (q) => {
+    const preview = (q.questionText || "").slice(0, 70);
+    if (!window.confirm(`Delete this question?\n\n"${preview}${q.questionText?.length > 70 ? "…" : ""}"\n\nThis cannot be undone.`)) return;
+    try {
+      await api.del(`/admin/question/${q.id}`);
+      setQuestions((prev) => prev.filter((x) => x.id !== q.id));
+    } catch (e) {
+      setNotice({ tone: "error", title: "That question could not be deleted.", detail: e.message });
+    }
   };
 
-  const handleEdit = (question) => {
-    setEditingQuestion(question);
-    setFormData({
-      text: question.text,
-      options: [...question.options],
-      correctAnswer: question.correctAnswer,
-      subject: question.subject,
-      image: null,
-      imagePreview: question.image || null
-    });
+  const openEditor = (q) => {
+    setFormError("");
+    if (q) {
+      setEditing(q);
+      setFormData({
+        text: q.questionText || "",
+        options: [q.optionA || "", q.optionB || "", q.optionC || "", q.optionD || ""],
+        optionImages: [q.optionAImage, q.optionBImage, q.optionCImage, q.optionDImage],
+        correctAnswer: q.correctAnswer || "",
+        sectionId: q.sectionId ?? "",
+        imagePreview: q.questionImage || null,
+        marks: q.marks ?? defaults.marks,
+        negativeMarks: q.negativeMarks ?? defaults.negativeMarks,
+      });
+    } else {
+      setEditing(null);
+      setFormData(emptyForm(defaults));
+    }
     setModalOpen(true);
   };
 
-  const handleCSVUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
+  const setField = (patch) => setFormData((prev) => ({ ...prev, ...patch }));
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const data = new Uint8Array(event.target.result);
-      const workbook = XLSX.read(data, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
-      
-      setCsvData(jsonData);
-      setCsvPreview(jsonData.slice(0, 5)); // Show first 5 rows as preview
-    };
-    reader.readAsArrayBuffer(file);
-  };
+  if (!examId) {
+    return (
+      <Layout title="Questions" subtitle="Build the paper">
+        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
+          Open an exam first — questions belong to the exam you are working on.
+        </div>
+      </Layout>
+    );
+  }
 
-  const handleBulkImport = async () => {
-    if (csvData.length === 0) return;
-
-    const formattedQuestions = csvData.map(row => ({
-      text: row.question || row.Question || row.text || "",
-      options: [
-        row.optionA || row.OptionA || row.option1 || "",
-        row.optionB || row.OptionB || row.option2 || "",
-        row.optionC || row.OptionC || row.option3 || "",
-        row.optionD || row.OptionD || row.option4 || ""
-      ],
-      correctAnswer: row.correctAnswer || row.CorrectAnswer || row.answer || "",
-      subject: row.subject || row.Subject || subjects[0],
-      image: row.image || row.Image || null
-    })).filter(q => q.text && q.options.every(opt => opt));
-
-    if (formattedQuestions.length > 0) {
-      await bulkAddQuestions(formattedQuestions);
-      setCsvModalOpen(false);
-      setCsvData([]);
-      setCsvPreview([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
-  };
-
-  const downloadCSVTemplate = () => {
-    const template = [
-      {
-        question: "Sample Question 1",
-        optionA: "Option A",
-        optionB: "Option B",
-        optionC: "Option C",
-        optionD: "Option D",
-        correctAnswer: "A",
-        subject: "Physics"
-      },
-      {
-        question: "Sample Question 2",
-        optionA: "Option A",
-        optionB: "Option B",
-        optionC: "Option C",
-        optionD: "Option D",
-        correctAnswer: "B",
-        subject: "Chemistry"
-      }
-    ];
-
-    const ws = XLSX.utils.json_to_sheet(template);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Questions_Template");
-    XLSX.writeFile(wb, "questions_template.xlsx");
+  const noticeTone = {
+    ok: "border-green-200 bg-green-50 text-green-900",
+    warn: "border-amber-300 bg-amber-50 text-amber-900",
+    error: "border-red-200 bg-red-50 text-red-900",
   };
 
   return (
-    <Layout title="Question Management">
-      <Card>
-        <CardHeader>
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            <div className="flex gap-3 flex-wrap">
-              <div className="relative">
-                <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
-                <Input
-                  placeholder="Search questions..."
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  className="pl-10 w-64"
-                />
+    <Layout title="Questions" subtitle={`Exam #${examId} · ${questions.length} question(s) · ${coverage.totalMarks} marks`}>
+
+      {/* ── Paper shape ─────────────────────────────────────────────────── */}
+      {sections.length > 0 && (
+        <div className="mb-5 flex flex-wrap gap-2">
+          {coverage.rows.map((row) => (
+            <button
+              key={String(row.id)}
+              onClick={() => setSectionFilter(sectionFilter === String(row.id) ? "all" : String(row.id))}
+              className={`rounded-exam border px-4 py-2.5 text-left transition-colors
+                ${sectionFilter === String(row.id) ? "border-primary-600 bg-primary-50" : "border-gray-200 bg-white hover:border-gray-400"}`}
+            >
+              <div className="exam-label">{sectionName(row.id)}</div>
+              <div className="mt-1 text-sm font-semibold text-gray-900">
+                <span className="tabular">{row.count}</span>
+                <span className="font-normal text-gray-500"> question(s) · </span>
+                <span className="tabular">{row.marks}</span>
+                <span className="font-normal text-gray-500"> marks</span>
               </div>
-              <select
-                value={selectedSubject}
-                onChange={(e) => setSelectedSubject(e.target.value)}
-                className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-              >
-                <option value="all">All Subjects</option>
-                {filterSubjects.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex gap-2">
-              <Button variant="secondary" onClick={() => setCsvModalOpen(true)}>
-                <FiUpload className="inline mr-2" /> Bulk Import
-              </Button>
-              <Button onClick={() => {
-                resetForm();
-                setModalOpen(true);
-              }}>
-                <FiPlus className="inline mr-2" /> Add Question
-              </Button>
-            </div>
+              {row.count === 0 && (
+                <div className="mt-1 flex items-center gap-1 text-xs text-amber-700">
+                  <FiAlertTriangle size={12} /> empty
+                </div>
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* ── Toolbar ─────────────────────────────────────────────────────── */}
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3 rounded-exam border border-gray-200 bg-white px-5 py-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative">
+            <FiSearch className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search questions…"
+              className="h-11 w-64 rounded-exam border border-gray-300 pl-9 pr-3 text-sm outline-none focus:border-primary-600"
+            />
           </div>
-        </CardHeader>
-        <CardBody>
-          {filteredQuestions.length === 0 ? (
-            <div className="text-center py-12">
-              <p className="text-gray-500">No questions found. Click "Add Question" to create your first question.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">ID</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Question</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Image</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Subject</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Correct Answer</th>
-                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-200">
-                  {filteredQuestions.map((q, index) => (
-                    <tr key={q.id || index} className="hover:bg-gray-50">
-                      <td className="px-6 py-4 text-sm text-gray-500">{index + 1}</td>
-                      <td className="px-6 py-4 text-sm text-gray-800 max-w-md">
-                        <div className="truncate">{q.text}</div>
+
+          <select
+            value={sectionFilter}
+            onChange={(e) => setSectionFilter(e.target.value)}
+            className="h-11 rounded-exam border border-gray-300 px-3 text-sm text-gray-700 outline-none focus:border-primary-600"
+          >
+            <option value="all">All sections</option>
+            {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+          </select>
+
+          <span className="mx-1 h-6 w-px bg-gray-200" />
+
+          <label className="flex h-11 cursor-pointer items-center gap-2 rounded-exam border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50">
+            <FiUploadCloud className="text-gray-500" />
+            <span className="max-w-[10rem] truncate">{csvFile ? csvFile.name : "Choose CSV"}</span>
+            <input type="file" accept=".csv" className="hidden" onChange={(e) => setCsvFile(e.target.files?.[0] || null)} />
+          </label>
+
+          <button onClick={handleCsvImport} disabled={importing || !csvFile} className="exam-action-quiet h-11">
+            {importing ? "Importing…" : "Import"}
+          </button>
+        </div>
+
+        <button onClick={() => openEditor(null)} className="exam-action-primary flex h-11 items-center gap-2">
+          <FiPlus className="stroke-[3]" /> Add question
+        </button>
+      </div>
+
+      {notice && (
+        <div className={`mb-5 flex items-start gap-2 rounded-exam border px-5 py-4 text-sm ${noticeTone[notice.tone]}`}>
+          {notice.tone === "ok" ? <FiCheck className="mt-0.5 shrink-0" /> : <FiAlertTriangle className="mt-0.5 shrink-0" />}
+          <div className="min-w-0 flex-1">
+            <p className="font-semibold">{notice.title}</p>
+            {notice.detail && <p className="mt-0.5">{notice.detail}</p>}
+            {notice.lines?.length > 0 && (
+              <ul className="mt-2 space-y-0.5">
+                {notice.lines.map((l) => <li key={l} className="mono text-xs">{l}</li>)}
+                {notice.more > 0 && <li className="text-xs italic">…and {notice.more} more.</li>}
+              </ul>
+            )}
+          </div>
+          <button onClick={() => setNotice(null)} className="shrink-0 opacity-60 hover:opacity-100"><FiX /></button>
+        </div>
+      )}
+
+      {/* ── The bank ────────────────────────────────────────────────────── */}
+      <div className="overflow-hidden rounded-exam border border-gray-200 bg-white">
+        {loading ? (
+          <div className="p-12 text-center text-sm text-gray-500">Loading questions…</div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center">
+            <FiInbox className="mx-auto mb-3 text-3xl text-gray-300" />
+            {questions.length === 0 ? (
+              <>
+                <p className="font-semibold text-gray-900">No questions yet.</p>
+                <p className="mt-1 text-sm text-gray-500">
+                  Add them one at a time, import a CSV, or read them straight out of a PDF or Word paper.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-semibold text-gray-900">Nothing matches those filters.</p>
+                <button onClick={() => { setSearch(""); setSectionFilter("all"); }} className="mt-3 text-sm font-semibold text-primary-700 hover:underline">
+                  Clear filters
+                </button>
+              </>
+            )}
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-gray-200 bg-gray-50">
+                  <th className="exam-label px-5 py-3">#</th>
+                  <th className="exam-label px-5 py-3">Question</th>
+                  <th className="exam-label px-5 py-3">Section</th>
+                  <th className="exam-label px-5 py-3 text-center">Key</th>
+                  <th className="exam-label px-5 py-3 text-right">Marks</th>
+                  <th className="exam-label px-5 py-3 text-right">Edit</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {filtered.map((q, idx) => {
+                  const keyIndex = LETTERS.indexOf(q.correctAnswer);
+                  const keyText = keyIndex >= 0 ? q[`option${q.correctAnswer}`] : null;
+                  const keyImage = keyIndex >= 0 ? q[`option${q.correctAnswer}Image`] : null;
+                  // Surfaced in the list, not just on save, because a question
+                  // imported before this check existed can still carry the fault.
+                  const brokenKey = !q.correctAnswer || (!keyText?.trim() && !keyImage);
+
+                  return (
+                    <tr key={q.id} className="align-top transition-colors hover:bg-gray-50">
+                      <td className="tabular px-5 py-4 text-sm text-gray-400">{idx + 1}</td>
+                      <td className="px-5 py-4">
+                        <p className="max-w-xl text-sm text-gray-900 line-clamp-2">{q.questionText}</p>
+                        <div className="mt-1.5 flex items-center gap-3 text-xs text-gray-500">
+                          {q.questionImage && <span className="flex items-center gap-1"><FiImage size={12} /> figure</span>}
+                          {[q.optionAImage, q.optionBImage, q.optionCImage, q.optionDImage].some(Boolean) && (
+                            <span className="flex items-center gap-1"><FiImage size={12} /> option images</span>
+                          )}
+                          {brokenKey && (
+                            <span className="flex items-center gap-1 font-semibold text-status-unanswered">
+                              <FiAlertTriangle size={12} /> answer key is blank
+                            </span>
+                          )}
+                        </div>
                       </td>
-                      <td className="px-6 py-4">
-                        {q.image ? (
-                          <img src={q.image} alt="Question" className="h-10 w-10 object-cover rounded" />
-                        ) : (
-                          <span className="text-gray-400">-</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`px-2 py-1 text-xs rounded-full ${
-                          q.subject === "Physics" ? "bg-blue-100 text-blue-700" :
-                          q.subject === "Chemistry" ? "bg-green-100 text-green-700" :
-                          q.subject === "Mathematics" ? "bg-purple-100 text-purple-700" :
-                          "bg-gray-100 text-gray-700"
-                        }`}>
-                          {q.subject}
+                      <td className="px-5 py-4">
+                        <span className="rounded-exam border border-gray-200 px-2 py-1 text-xs font-semibold text-gray-600">
+                          {sectionName(q.sectionId)}
                         </span>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">{q.correctAnswer}</td>
-                      <td className="px-6 py-4 text-right space-x-2">
-                        <button onClick={() => handleEdit(q)} className="text-indigo-600 hover:text-indigo-800">
-                          <FiEdit2 className="inline" />
-                        </button>
-                        <button onClick={() => deleteQuestion(q.id)} className="text-red-600 hover:text-red-800 ml-3">
-                          <FiTrash2 className="inline" />
-                        </button>
+                      <td className="px-5 py-4 text-center">
+                        <span className={`inline-flex h-7 w-7 items-center justify-center rounded-exam text-xs font-bold
+                          ${brokenKey ? "bg-status-unansweredSoft text-status-unanswered" : "bg-status-answeredSoft text-status-answered"}`}>
+                          {q.correctAnswer || "—"}
+                        </span>
+                      </td>
+                      <td className="tabular px-5 py-4 text-right text-sm text-gray-700">
+                        +{q.marks ?? 1}
+                        {Number(q.negativeMarks) > 0 && (
+                          <span className="text-status-unanswered"> / −{Math.abs(q.negativeMarks)}</span>
+                        )}
+                      </td>
+                      <td className="px-5 py-4">
+                        {/* Always visible. These were hover-only, which put them
+                            out of reach on a touch screen entirely. */}
+                        <div className="flex justify-end gap-1">
+                          <button onClick={() => openEditor(q)} title="Edit"
+                                  className="rounded-exam p-2 text-gray-500 transition-colors hover:bg-primary-50 hover:text-primary-700">
+                            <FiEdit2 size={15} />
+                          </button>
+                          <button onClick={() => handleDelete(q)} title="Delete"
+                                  className="rounded-exam p-2 text-gray-500 transition-colors hover:bg-status-unansweredSoft hover:text-status-unanswered">
+                            <FiTrash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </CardBody>
-      </Card>
-
-      {/* Add/Edit Question Modal */}
-      <Modal isOpen={modalOpen} onClose={() => {
-        setModalOpen(false);
-        resetForm();
-      }} title={editingQuestion ? "Edit Question" : "Add New Question"} size="lg">
-        <div className="space-y-4">
-          <Input
-            label="Question Text"
-            value={formData.text}
-            onChange={(e) => setFormData({ ...formData, text: e.target.value })}
-            placeholder="Enter the question"
-            required
-          />
-          
-          {/* Image Upload */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Question Image (Optional)</label>
-            <div className="mt-1 flex items-center space-x-4">
-              {formData.imagePreview ? (
-                <div className="relative">
-                  <img src={formData.imagePreview} alt="Preview" className="h-20 w-20 object-cover rounded-lg" />
-                  <button
-                    onClick={removeImage}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1"
-                  >
-                    <FiX size={12} />
-                  </button>
-                </div>
-              ) : (
-                <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-                  <FiImage className="mr-2" />
-                  Upload Image
-                  <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
-                </label>
-              )}
-            </div>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
+        )}
+      </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            {formData.options.map((opt, idx) => (
-              <Input
-                key={idx}
-                label={`Option ${String.fromCharCode(65 + idx)}`}
-                value={opt}
-                onChange={(e) => {
-                  const newOptions = [...formData.options];
-                  newOptions[idx] = e.target.value;
-                  setFormData({ ...formData, options: newOptions });
-                }}
-                placeholder={`Option ${String.fromCharCode(65 + idx)}`}
-                required
-              />
-            ))}
-          </div>
-          <div className="grid grid-cols-2 gap-4">
-            <Input
-              label="Correct Answer"
-              value={formData.correctAnswer}
-              onChange={(e) => setFormData({ ...formData, correctAnswer: e.target.value })}
-              placeholder="A, B, C, or D"
-              required
+      {questions.length > 0 && (
+        <div className="mt-6 flex justify-end">
+          <button onClick={() => navigate("/admin/review")} className="exam-action-primary">
+            Review &amp; finalise paper
+          </button>
+        </div>
+      )}
+
+      {/* ── Editor ──────────────────────────────────────────────────────── */}
+      <Modal isOpen={modalOpen} onClose={() => setModalOpen(false)}
+             title={editing ? "Edit question" : "New question"} size="xl">
+        <div className="max-h-[78vh] space-y-6 overflow-y-auto px-1 py-1">
+
+          <section>
+            <label className="exam-label mb-2 block">Question</label>
+            <textarea
+              rows={3}
+              value={formData.text}
+              onChange={(e) => setField({ text: e.target.value })}
+              placeholder="Type the question as candidates will read it…"
+              className="w-full rounded-exam border border-gray-300 p-4 text-question outline-none focus:border-primary-600"
             />
+            <div className="mt-2 flex items-center gap-3">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-semibold text-gray-600 hover:text-primary-700">
+                <FiImage /> {uploading ? "Uploading…" : "Attach a figure"}
+                <input type="file" accept="image/*" className="hidden"
+                       onChange={async (e) => {
+                         const url = await uploadImage(e.target.files?.[0]);
+                         if (url) setField({ imagePreview: url });
+                       }} />
+              </label>
+            </div>
+            {formData.imagePreview && (
+              <div className="relative mt-3 inline-block">
+                {/* Uploads return a bare filename; it has to be resolved to the
+                    server's /uploads path or the browser looks for it under the
+                    current admin route and the preview silently breaks. */}
+                <img src={uploadUrl(formData.imagePreview)} alt="Question figure"
+                     className="max-h-44 rounded-exam border border-gray-200" />
+                <button onClick={() => setField({ imagePreview: null })}
+                        className="absolute -right-2 -top-2 rounded-full bg-white p-1 text-status-unanswered shadow ring-1 ring-gray-200">
+                  <FiX size={14} />
+                </button>
+              </div>
+            )}
+          </section>
+
+          <section>
+            <label className="exam-label mb-2 block">Options — select the correct one</label>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {LETTERS.map((L, i) => {
+                const chosen = formData.correctAnswer === L;
+                return (
+                  <div key={L}
+                       className={`rounded-exam border p-3 transition-colors
+                         ${chosen ? "border-status-answered bg-status-answeredSoft" : "border-gray-200 hover:border-gray-400"}`}>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="radio"
+                        name="correct-option"
+                        checked={chosen}
+                        onChange={() => setField({ correctAnswer: L })}
+                        title={`Mark option ${L} as correct`}
+                      />
+                      <span className="w-4 shrink-0 text-xs font-bold text-gray-500">{L}</span>
+                      <input
+                        value={formData.options[i]}
+                        onChange={(e) => {
+                          const next = [...formData.options];
+                          next[i] = e.target.value;
+                          setField({ options: next });
+                        }}
+                        placeholder={`Option ${L}`}
+                        className="w-full bg-transparent text-option outline-none"
+                      />
+                      <label className="shrink-0 cursor-pointer text-gray-400 hover:text-primary-700" title="Attach an image to this option">
+                        <FiImage size={15} />
+                        <input type="file" accept="image/*" className="hidden"
+                               onChange={async (e) => {
+                                 const url = await uploadImage(e.target.files?.[0]);
+                                 if (!url) return;
+                                 const next = [...formData.optionImages];
+                                 next[i] = url;
+                                 setField({ optionImages: next });
+                               }} />
+                      </label>
+                    </div>
+                    {formData.optionImages[i] && (
+                      <div className="relative mt-2">
+                        <img src={uploadUrl(formData.optionImages[i])} alt={`Option ${L}`}
+                             className="h-20 w-full rounded border border-gray-200 object-contain" />
+                        <button
+                          onClick={() => {
+                            const next = [...formData.optionImages];
+                            next[i] = null;
+                            setField({ optionImages: next });
+                          }}
+                          className="absolute -right-2 -top-2 rounded-full bg-white p-1 text-status-unanswered shadow ring-1 ring-gray-200">
+                          <FiX size={12} />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="grid gap-4 rounded-exam border border-gray-200 bg-gray-50 p-4 sm:grid-cols-3">
             <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+              <label className="exam-label mb-2 block">Section</label>
               <select
-                value={formData.subject}
-                onChange={(e) => setFormData({ ...formData, subject: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                value={formData.sectionId}
+                onChange={(e) => setField({ sectionId: e.target.value })}
+                className="h-10 w-full rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600"
               >
-                {subjects.map((s) => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
+                <option value="">Choose…</option>
+                {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>
-          </div>
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="secondary" onClick={() => {
-              setModalOpen(false);
-              resetForm();
-            }}>Cancel</Button>
-            <Button onClick={handleSave}>{editingQuestion ? "Update" : "Save"} Question</Button>
-          </div>
-        </div>
-      </Modal>
-
-      {/* CSV Bulk Import Modal */}
-      <Modal isOpen={csvModalOpen} onClose={() => setCsvModalOpen(false)} title="Bulk Import Questions" size="lg">
-        <div className="space-y-4">
-          <div className="bg-blue-50 p-4 rounded-lg">
-            <h3 className="font-semibold text-blue-900 mb-2">CSV/Excel Format Instructions:</h3>
-            <p className="text-sm text-blue-800">Your file should have the following columns:</p>
-            <ul className="text-sm text-blue-800 list-disc list-inside mt-2">
-              <li>question - The question text</li>
-              <li>optionA, optionB, optionC, optionD - The answer options</li>
-              <li>correctAnswer - The correct option (A, B, C, or D)</li>
-              <li>subject - Subject category</li>
-            </ul>
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="secondary" onClick={downloadCSVTemplate}>
-              Download Template
-            </Button>
-            <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-gray-300 rounded-md shadow-sm text-sm font-medium text-gray-700 bg-white hover:bg-gray-50">
-              <FiUpload className="mr-2" />
-              Upload File
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".xlsx,.xls,.csv"
-                onChange={handleCSVUpload}
-                className="hidden"
-              />
-            </label>
-          </div>
-
-          {csvPreview.length > 0 && (
             <div>
-              <h3 className="font-semibold mb-2">Preview (First 5 rows):</h3>
-              <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      {Object.keys(csvPreview[0] || {}).map((key) => (
-                        <th key={key} className="px-4 py-2 text-left">{key}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {csvPreview.map((row, idx) => (
-                      <tr key={idx}>
-                        {Object.values(row).map((val, i) => (
-                          <td key={i} className="px-4 py-2 border-t">{String(val).substring(0, 30)}</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-              <p className="text-sm text-gray-600 mt-2">Total records found: {csvData.length}</p>
+              <label className="exam-label mb-2 block">Marks if correct</label>
+              <input type="number" min="0" step="0.5" value={formData.marks}
+                     onChange={(e) => setField({ marks: e.target.value })}
+                     className="tabular h-10 w-full rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600" />
+            </div>
+            <div>
+              {/* Per question, not per exam. This is what lets one platform run
+                  EAMCET (no negative), NEET (−1) and NQT (0) side by side — and
+                  it was previously only settable on imported questions. */}
+              <label className="exam-label mb-2 block">Deducted if wrong</label>
+              <input type="number" min="0" step="0.25" value={formData.negativeMarks}
+                     onChange={(e) => setField({ negativeMarks: e.target.value })}
+                     className="tabular h-10 w-full rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600" />
+            </div>
+          </section>
+
+          {formError && (
+            <div className="flex items-start gap-2 rounded-exam border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
+              <FiAlertTriangle className="mt-0.5 shrink-0" /> {formError}
             </div>
           )}
 
-          <div className="flex justify-end gap-3 pt-4">
-            <Button variant="secondary" onClick={() => setCsvModalOpen(false)}>Cancel</Button>
-            <Button onClick={handleBulkImport} disabled={csvData.length === 0}>
-              Import {csvData.length} Questions
-            </Button>
+          <div className="flex items-center justify-between gap-3 border-t border-gray-200 pt-4">
+            <button onClick={() => setModalOpen(false)} className="text-sm font-semibold text-gray-500 hover:text-gray-800">
+              Cancel
+            </button>
+            <div className="flex gap-2">
+              <button onClick={() => handleSave(false)} disabled={saving} className="exam-action-quiet">
+                {saving ? "Saving…" : "Save & close"}
+              </button>
+              {!editing && (
+                <button onClick={() => handleSave(true)} disabled={saving} className="exam-action-primary">
+                  {saving ? "Saving…" : "Save & add another"}
+                </button>
+              )}
+            </div>
           </div>
         </div>
       </Modal>
