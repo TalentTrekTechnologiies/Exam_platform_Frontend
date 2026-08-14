@@ -86,7 +86,9 @@ export default function CreateExam() {
           negativeMarks: Number(exam.negativeMarks)
         }));
 
-        alert("Exam Created Successfully!");
+        // A blocking alert() here used to freeze the entire tab until someone
+        // clicked OK, on every single exam created — arriving on the Sections
+        // screen (which shows the exam ID right away) is confirmation enough.
         navigate("/admin/sections");
       }
     } catch (err) {

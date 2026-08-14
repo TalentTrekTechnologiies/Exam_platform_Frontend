@@ -44,11 +44,14 @@ const ReviewPage = () => {
   const totalMarks = questions.reduce((sum, q) => sum + (q.marks || 0), 0);
 
   const handlePublish = () => {
-    // Here you would typically call a 'publish' API or simply redirect
-    alert("🚀 Exam Live! Redirecting to Dashboard...");
-    localStorage.removeItem("examId"); // Clear after finish
-    localStorage.removeItem("examRules");
-    navigate("/admin/dashboard");
+    // This button never actually called the publish API — it showed "Exam
+    // Live!" and cleared local state while the exam's `published` flag in the
+    // database stayed false. An admin walking away here believed candidates
+    // could sign in when nothing had actually gone live. The real publish
+    // flow — blocker/warning checks and the candidate link — already exists
+    // on its own screen; this step is the review before it, so it belongs
+    // there, not a second, non-functional copy of it here.
+    navigate("/admin/publish");
   };
 
   if (loading) return <div className="flex h-screen items-center justify-center font-bold text-indigo-600">Generating Summary...</div>;

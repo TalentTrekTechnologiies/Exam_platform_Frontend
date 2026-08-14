@@ -1,23 +1,31 @@
 import React, { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
 import Card from "../../components/UI/Card";
 import { BarChart } from "../../components/UI/Chart";
-import { FiUsers, FiBook, FiClock, FiAward, FiPlusCircle, FiList, FiCheckSquare, FiCalendar } from "react-icons/fi";
+import { FiUsers, FiBook, FiClock, FiAward, FiPlusCircle, FiList, FiCheckSquare, FiCalendar, FiArrowRight, FiEdit3 } from "react-icons/fi";
 import { useExam } from "../../contexts/ExamContext";
-import { API_BASE, readAdmin } from "../../lib/api";
+import { API_BASE, api, uploadUrl, readAdmin } from "../../lib/api";
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const { questions, examSettings } = useExam();
-  
+
   // ✅ STEP 2: USE REAL ADMIN DATA
   const admin = readAdmin();
-  
+
   const [stats, setStats] = useState({
     totalStudents: 0,
     questionsBank: 0,
     avgScore: 0,
     examDuration: 0
   });
+
+  // The exam most recently worked on that was never published — offered back
+  // as "continue where you left off". Previously there was no way back to an
+  // unfinished exam at all once you navigated away; only an accident of
+  // localStorage sometimes made it look like the app remembered.
+  const [inProgressExam, setInProgressExam] = useState(null);
   
   const [chartData, setChartData] = useState({
     labels: ["Jan", "Feb", "Mar", "Apr", "May", "Jun"],
@@ -32,7 +40,23 @@ const Dashboard = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    (async () => {
+      try {
+        const exams = await api.get("/admin/exam");
+        // Newest first already; the first unpublished one is what "in progress" means.
+        const unfinished = (exams || []).find((e) => !e.published);
+        setInProgressExam(unfinished || null);
+      } catch {
+        // Silent — this banner is a convenience, not something worth failing loudly over.
+      }
+    })();
   }, []);
+
+  const resumeInProgress = () => {
+    if (!inProgressExam) return;
+    localStorage.setItem("examId", String(inProgressExam.id));
+    navigate("/admin/sections");
+  };
 
   const fetchDashboardData = async () => {
     try {
@@ -114,13 +138,21 @@ const Dashboard = () => {
       <div className="flex items-center justify-between mb-8 bg-white p-4 rounded-xl shadow-sm border border-slate-100">
         <div className="flex items-center gap-4">
           {/* ✅ STEP 5: DISPLAY COLLEGE LOGO */}
-          <img
-            src={`${API_BASE}/uploads/${admin?.collegeLogo}`}
-            alt="logo"
-            className="border border-slate-200 shadow-sm"
-            style={{ width: "50px", height: "50px", borderRadius: "50%", objectFit: "cover" }}
-            onError={(e) => { e.target.src = "https://via.placeholder.com/50"; }} // Fallback if image fails
-          />
+          {admin?.collegeLogo ? (
+            <img
+              src={uploadUrl(admin.collegeLogo)}
+              alt="logo"
+              className="border border-slate-200 shadow-sm"
+              style={{ width: "50px", height: "50px", borderRadius: "50%", objectFit: "cover" }}
+              // No logo set is a normal state, not a broken image — hide rather
+              // than reach out to a third-party placeholder service for it.
+              onError={(e) => { e.target.style.display = "none"; }}
+            />
+          ) : (
+            <div className="grid h-[50px] w-[50px] shrink-0 place-items-center rounded-full border border-slate-200 bg-slate-50 text-xs font-bold text-slate-400">
+              {(admin?.collegeName || "?").charAt(0).toUpperCase()}
+            </div>
+          )}
           <div>
             <h2 className="text-lg font-bold text-slate-800 leading-none">{admin?.collegeName}</h2>
             {/* ✅ STEP 4: DISPLAY ADMIN EMAIL */}
@@ -132,6 +164,28 @@ const Dashboard = () => {
           <p className="text-xs text-slate-400">Authenticated Session</p>
         </div>
       </div>
+
+      {inProgressExam && (
+        <div className="mb-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-amber-200 bg-amber-50 p-5">
+          <div className="flex items-center gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-amber-100 text-amber-700">
+              <FiEdit3 />
+            </div>
+            <div>
+              <p className="text-sm font-semibold text-amber-900">
+                Continue where you left off — "{inProgressExam.title}" isn't published yet.
+              </p>
+              <p className="text-xs text-amber-700">Exam #{inProgressExam.id} · started but not finished</p>
+            </div>
+          </div>
+          <button
+            onClick={resumeInProgress}
+            className="flex items-center gap-2 rounded-lg bg-amber-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-amber-700"
+          >
+            Resume <FiArrowRight />
+          </button>
+        </div>
+      )}
 
       <div className="flex flex-wrap gap-4 mb-6">
         <button

@@ -191,14 +191,22 @@ const SectionManagement = () => {
 
         {/* Footer Navigation */}
         <div className="mt-12 flex items-center justify-between border-t border-gray-100 pt-8">
-          <p className="text-sm text-gray-400 font-medium">
-            {sections.length} Section{sections.length !== 1 ? 's' : ''} Defined
-          </p>
+          <div>
+            <p className="text-sm text-gray-400 font-medium">
+              {sections.length} Section{sections.length !== 1 ? 's' : ''} Defined
+            </p>
+            {/* Not a block — sections also get created automatically from a
+                CSV's sectionName column or a document import's section
+                headings, so having none here yet is a normal state, not an
+                error, for anyone about to import a paper rather than type one. */}
+            {sections.length === 0 && (
+              <p className="mt-1 text-xs text-gray-400">
+                No sections yet — that's fine if you're importing a question paper, it'll add them for you.
+              </p>
+            )}
+          </div>
           <button
-            onClick={() => {
-              if (sections.length === 0) return alert("Add at least one section before proceeding.");
-              navigate("/admin/questions");
-            }}
+            onClick={() => navigate("/admin/questions")}
             className="group px-8 py-4 bg-gray-900 text-white rounded-2xl font-bold flex items-center gap-3 hover:bg-black transition-all shadow-xl active:scale-95"
           >
             Next: Configure Questions <FiArrowRight className="group-hover:translate-x-1 transition-transform" />

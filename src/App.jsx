@@ -34,6 +34,7 @@ const Publish = lazy(() => import("./pages/admin/Publish"));
 const AddCandidates = lazy(() => import("./pages/admin/AddCandidates"));
 const ReviewPage = lazy(() => import("./pages/admin/ReviewPage"));
 const Settings = lazy(() => import("./pages/admin/Settings"));
+const Slots = lazy(() => import("./pages/admin/Slots"));
 const NotFound = lazy(() => import("./pages/NotFound"));
 
 const Loading = () => (
@@ -86,6 +87,9 @@ function App() {
             <Route path="/admin/review" element={<Admin><ReviewPage /></Admin>} />
             {/* Previously a dead sidebar link — no route existed for it at all. */}
             <Route path="/admin/settings" element={<Admin><Settings /></Admin>} />
+            {/* Previously a dead Dashboard button — "Create Slot" linked here
+                with no route behind it at all. */}
+            <Route path="/admin/slots" element={<Admin><Slots /></Admin>} />
 
             <Route path="*" element={<Suspense fallback={<Loading />}><NotFound /></Suspense>} />
           </Routes>
