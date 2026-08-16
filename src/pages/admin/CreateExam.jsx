@@ -61,6 +61,13 @@ export default function CreateExam() {
         duration: Number(exam.duration) || 0,
         startDate: exam.startDate || null,
         endDate: exam.endDate || null,
+        // The server stores the marking scheme under these names, and applies
+        // it to any imported question that doesn't declare its own. Sending
+        // only positiveMarks/negativeMarks (as this did) meant the scheme was
+        // silently dropped: it lived in this browser's localStorage alone, so
+        // a CSV or PDF import fell back to 1 mark and no penalty.
+        defaultMarks: Number(exam.positiveMarks) || null,
+        defaultNegativeMarks: exam.negativeMarking ? Math.abs(Number(exam.negativeMarks) || 0) : 0,
       };
 
       const res = await fetch(`${API_BASE}/admin/exam`, {
