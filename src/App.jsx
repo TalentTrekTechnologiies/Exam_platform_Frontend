@@ -50,9 +50,18 @@ const Admin = ({ children, guarded = true }) => (
   </Suspense>
 );
 
+/**
+ * Where the app is mounted, e.g. "/online" when served under an existing site.
+ *
+ * Vite sets BASE_URL from the `base` config, so this follows the build
+ * automatically rather than being a second place to keep in sync. React Router
+ * wants no trailing slash; Vite's value has one.
+ */
+const BASENAME = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+
 function App() {
   return (
-    <Router>
+    <Router basename={BASENAME}>
       <AuthProvider>
         <ExamProvider>
           <Routes>
