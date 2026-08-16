@@ -58,6 +58,19 @@ const ImportQuestions = () => {
   const incomplete = rows.filter((r) => !r.questionText || !r.optionA || !r.optionB).length;
   const canImport = rows.length > 0 && missingKeys === 0 && incomplete === 0;
 
+  /**
+   * Documents rarely state their negative-marking scheme in a machine-readable
+   * way, so the parser leaves it unset rather than inventing one. That is the
+   * right call — but it means an admin importing an EAMCET or NEET paper, which
+   * they know penalises wrong answers, would silently publish it with NO
+   * penalty and no indication anything was missing. Surfaced here, with a
+   * one-click apply, because setting it by hand across 180 questions is not a
+   * realistic ask.
+   */
+  const noNegativeMarking = rows.length > 0 && rows.every((r) => !Number(r.negativeMarks));
+  const applyNegativeToAll = (value) =>
+    setRows((prev) => prev.map((r) => ({ ...r, negativeMarks: value })));
+
   const confirm = async () => {
     setBusy(true); setError("");
     try {
@@ -162,6 +175,27 @@ const ImportQuestions = () => {
                 {incomplete > 0 && <><b>{incomplete} question(s) are missing text or options.</b> </>}
                 Fix or remove them to import.
               </span>
+            </div>
+          )}
+
+          {/* Not a blocker — a paper with no negative marking is perfectly
+              valid. But it must be a decision, not something discovered after
+              results are published. */}
+          {noNegativeMarking && (
+            <div className="mb-5 rounded-exam border border-gray-300 bg-gray-50 px-5 py-4 text-sm text-gray-700">
+              <p className="font-semibold text-gray-900">This document didn't specify negative marking.</p>
+              <p className="mt-1">
+                Wrong answers will cost nothing. If this paper should penalise them
+                (EAMCET, NEET and NQT-style papers usually do), apply it to all
+                {" "}{rows.length} question(s) now:
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {[0.25, 0.5, 1].map((v) => (
+                  <button key={v} onClick={() => applyNegativeToAll(v)} className="exam-action-quiet">
+                    −{v} per wrong answer
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
