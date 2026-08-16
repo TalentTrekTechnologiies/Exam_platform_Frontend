@@ -163,6 +163,10 @@ export default function CreateExam() {
           {/* Section 2: Timing */}
           <Card className="p-6 border-none shadow-sm ring-1 ring-gray-200">
             <h2 className="font-bold mb-4 text-gray-800 flex items-center gap-2"><FiClock className="text-indigo-500"/> Timing</h2>
+            <p className="-mt-2 mb-4 text-xs text-gray-500">
+              Candidates can sign in between these times. This becomes the exam&apos;s first slot
+              automatically — add more from the Slots page only if you need a second sitting.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="p-3 bg-gray-50 rounded-xl">
                 <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Duration (min)</label>
