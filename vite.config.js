@@ -2,8 +2,24 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+// What this installation calls itself. The same value the app uses at runtime,
+// applied to index.html too so the browser tab matches the screen — a
+// candidate should not see one institution's name in the tab and another on
+// the page. The fallback is deliberately generic rather than any one college.
+const platformName = process.env.VITE_PLATFORM_NAME || 'Examination Portal'
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    {
+      // index.html is served as a static file, so it never sees the runtime
+      // env the app reads. This substitutes at build time instead.
+      name: 'brand-index-html',
+      transformIndexHtml(html) {
+        return html.replaceAll('__PLATFORM_NAME__', platformName)
+      },
+    },
+  ],
 
   // Where this build will be served from. Defaults to the root, which is what
   // local dev and a standalone domain both want. Set VITE_BASE_PATH=/online/

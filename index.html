@@ -4,8 +4,11 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#4f46e5" />
-    <meta name="description" content="Mock EAMCET Online Exam System" />
-    <title>Mock EAMCET | Online Exam System</title>
+    <!-- Both are filled in at build time from VITE_PLATFORM_NAME, so the tab a
+         candidate sees carries their own institution's name rather than the
+         name this project happened to be built under. -->
+    <meta name="description" content="__PLATFORM_NAME__" />
+    <title>__PLATFORM_NAME__</title>
     <!-- Without this the browser falls back to /favicon.ico at the SITE root,
          which under a subpath deployment is the host site's icon, not ours.
          Vite rewrites this to the configured base, so it follows the build. -->
