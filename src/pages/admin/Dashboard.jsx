@@ -55,7 +55,9 @@ const Dashboard = () => {
   const resumeInProgress = () => {
     if (!inProgressExam) return;
     localStorage.setItem("examId", String(inProgressExam.id));
-    navigate("/admin/sections");
+    // Questions is where the work actually is — resuming into Sections dropped
+    // people on a screen most exams never need.
+    navigate("/admin/questions");
   };
 
   const fetchDashboardData = async () => {

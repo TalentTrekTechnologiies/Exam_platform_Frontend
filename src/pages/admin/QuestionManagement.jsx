@@ -5,7 +5,7 @@ import Modal from "../../components/UI/Modal";
 import { API_BASE, api, uploadUrl } from "../../lib/api";
 import {
   FiEdit2, FiTrash2, FiPlus, FiSearch, FiImage, FiX, FiUploadCloud,
-  FiAlertTriangle, FiCheck, FiInbox,
+  FiAlertTriangle, FiCheck, FiInbox, FiFileText,
 } from "react-icons/fi";
 
 /**
@@ -201,7 +201,11 @@ const QuestionManagement = () => {
     const filled = formData.options.map((o, i) => Boolean((o || "").trim()) || Boolean(formData.optionImages[i]));
 
     if (!formData.text.trim() && !formData.imagePreview) return "The question needs text, or an image to stand in for it.";
-    if (!formData.sectionId) return "Choose the section this question belongs to.";
+    // Section deliberately optional. The flow no longer routes through the
+    // Sections screen — imports create sections from the paper itself — so
+    // demanding one here would block anyone typing their first question into a
+    // brand-new exam. Unsectioned questions group under "General", which the
+    // scorecard and results already handle.
     if (filled.filter(Boolean).length < 2) return "A question needs at least two options.";
     if (!formData.correctAnswer) return "Mark which option is correct — a question without a key cannot be marked.";
 
@@ -222,7 +226,9 @@ const QuestionManagement = () => {
 
     const payload = {
       examId: Number(examId),
-      sectionId: Number(formData.sectionId),
+      // Number("") is 0, not null — sending 0 would point the question at a
+      // section id that cannot exist.
+      sectionId: formData.sectionId ? Number(formData.sectionId) : null,
       questionText: formData.text,
       questionImage: formData.imagePreview || null,
       optionA: formData.options[0], optionB: formData.options[1],
@@ -364,6 +370,17 @@ const QuestionManagement = () => {
 
           <span className="mx-1 h-6 w-px bg-gray-200" />
 
+          {/* Reading a real question paper is the better route in and was only
+              reachable from the sidebar, while CSV — the narrower option — had
+              a button right here. Anyone holding a PDF paper would reasonably
+              conclude the product could not read one. */}
+          <button
+            onClick={() => navigate("/admin/questions/import")}
+            className="exam-action-primary flex h-11 items-center gap-2"
+          >
+            <FiFileText /> Import PDF / Word paper
+          </button>
+
           <label className="flex h-11 cursor-pointer items-center gap-2 rounded-exam border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50">
             <FiUploadCloud className="text-gray-500" />
             <span className="max-w-[10rem] truncate">{csvFile ? csvFile.name : "Choose CSV"}</span>
@@ -371,11 +388,11 @@ const QuestionManagement = () => {
           </label>
 
           <button onClick={handleCsvImport} disabled={importing || !csvFile} className="exam-action-quiet h-11">
-            {importing ? "Importing…" : "Import"}
+            {importing ? "Importing…" : "Import CSV"}
           </button>
         </div>
 
-        <button onClick={() => openEditor(null)} className="exam-action-primary flex h-11 items-center gap-2">
+        <button onClick={() => openEditor(null)} className="exam-action-quiet flex h-11 items-center gap-2">
           <FiPlus className="stroke-[3]" /> Add question
         </button>
       </div>
@@ -408,8 +425,21 @@ const QuestionManagement = () => {
               <>
                 <p className="font-semibold text-gray-900">No questions yet.</p>
                 <p className="mt-1 text-sm text-gray-500">
-                  Add them one at a time, import a CSV, or read them straight out of a PDF or Word paper.
+                  The quickest way in is to hand it your existing question paper.
                 </p>
+                {/* This empty state is where a newly created exam lands, so the
+                    fastest route in belongs here rather than only in a toolbar. */}
+                <div className="mt-4 flex flex-wrap justify-center gap-2">
+                  <button
+                    onClick={() => navigate("/admin/questions/import")}
+                    className="exam-action-primary flex items-center gap-2"
+                  >
+                    <FiFileText /> Import a PDF or Word paper
+                  </button>
+                  <button onClick={() => openEditor(null)} className="exam-action-quiet flex items-center gap-2">
+                    <FiPlus /> Type one in
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -609,13 +639,13 @@ const QuestionManagement = () => {
 
           <section className="grid gap-4 rounded-exam border border-gray-200 bg-gray-50 p-4 sm:grid-cols-3">
             <div>
-              <label className="exam-label mb-2 block">Section</label>
+              <label className="exam-label mb-2 block">Section <span className="font-normal normal-case text-gray-400">(optional)</span></label>
               <select
                 value={formData.sectionId}
                 onChange={(e) => setField({ sectionId: e.target.value })}
                 className="h-10 w-full rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600"
               >
-                <option value="">Choose…</option>
+                <option value="">No section</option>
                 {sections.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>
             </div>

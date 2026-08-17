@@ -93,10 +93,15 @@ export default function CreateExam() {
           negativeMarks: Number(exam.negativeMarks)
         }));
 
-        // A blocking alert() here used to freeze the entire tab until someone
-        // clicked OK, on every single exam created — arriving on the Sections
-        // screen (which shows the exam ID right away) is confirmation enough.
-        navigate("/admin/sections");
+        // Straight to Questions, not Sections.
+        //
+        // Sections used to sit between the two, but nothing in the normal flow
+        // needs it: importing a paper creates sections from the document's own
+        // headings, and a CSV creates them from its sectionName column. Sending
+        // every admin through a screen they should usually skip made an
+        // optional step look mandatory. It stays reachable from the sidebar for
+        // anyone typing a paper by hand who wants the structure first.
+        navigate("/admin/questions");
       }
     } catch (err) {
       alert("Error saving exam.");
