@@ -189,28 +189,28 @@ const Dashboard = () => {
 
       <div className="flex flex-wrap gap-4 mb-6">
         <button
-          onClick={() => window.location.href = "/admin/create-exam"}
+          onClick={() => navigate("/admin/create-exam")}
           className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
         >
           <FiPlusCircle /> Create Exam
         </button>
 
         <button
-          onClick={() => window.location.href = "/admin/sections"}
+          onClick={() => navigate("/admin/sections")}
           className="flex items-center gap-2 bg-green-600 hover:bg-green-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
         >
           <FiList /> Add Sections
         </button>
 
         <button
-          onClick={() => window.location.href = "/admin/questions"}
+          onClick={() => navigate("/admin/questions")}
           className="flex items-center gap-2 bg-yellow-500 hover:bg-yellow-600 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
         >
           <FiCheckSquare /> Add Questions
         </button>
 
         <button
-          onClick={() => window.location.href = "/admin/slots"}
+          onClick={() => navigate("/admin/slots")}
           className="flex items-center gap-2 bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg font-medium transition-colors shadow-sm"
         >
           <FiCalendar /> Create Slot

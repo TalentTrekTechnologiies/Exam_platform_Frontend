@@ -52,6 +52,21 @@ export const INSTITUTION_CODE = (() => {
 
 export const apiUrl = (path) => `${BASE}${path.startsWith("/") ? path : `/${path}`}`;
 
+/**
+ * A path INSIDE this app, for real browser navigations.
+ *
+ * React Router prefixes its own links with the basename, but anything using
+ * window.location goes straight to the browser and skips that entirely. When
+ * the app is mounted under /online, a bare "/admin/login" therefore leaves the
+ * app and lands on whatever the host site serves at that address. Vite exposes
+ * the mount point as BASE_URL, so this derives from the build rather than
+ * being a second place to keep in sync.
+ */
+export const appPath = (path) => {
+  const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  return `${base}${path.startsWith("/") ? path : `/${path}`}`;
+};
+
 /** Resolves an uploaded filename to a servable URL. Accepts full URLs unchanged. */
 export const uploadUrl = (filename) => {
   if (!filename) return null;
@@ -213,13 +228,21 @@ export function installAuthFetch() {
 
     // An expired or missing token should land the user on the right sign-in
     // screen rather than leaving the page half-rendered with silent failures.
+    //
+    // Paths go through appPath because these are real browser navigations, not
+    // router ones — they bypass React Router and its basename entirely. Served
+    // under /online, a bare "/verify" would leave the app completely and land
+    // on the host site's page, so an expired session would look to a candidate
+    // like the exam had vanished.
     if (response.status === 401 && !path.includes("/login") && !path.includes("/validate")) {
       if (path.includes("/student/")) {
         tokens.clearStudent();
-        if (!window.location.pathname.startsWith("/verify")) window.location.replace("/verify");
+        const to = appPath("/verify");
+        if (!window.location.pathname.startsWith(to)) window.location.replace(to);
       } else {
         tokens.clearAdmin();
-        if (!window.location.pathname.startsWith("/admin/login")) window.location.replace("/admin/login");
+        const to = appPath("/admin/login");
+        if (!window.location.pathname.startsWith(to)) window.location.replace(to);
       }
     }
 
