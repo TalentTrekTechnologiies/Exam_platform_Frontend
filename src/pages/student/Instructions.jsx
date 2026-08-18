@@ -33,7 +33,7 @@ const Instructions = () => {
   const hallTicket = localStorage.getItem("hallTicket") || "";
 
   useEffect(() => {
-    const examId = localStorage.getItem("examId");
+    const examId = localStorage.getItem("student_examId");
     if (!examId) {
       navigate("/verify", { replace: true });
       return;

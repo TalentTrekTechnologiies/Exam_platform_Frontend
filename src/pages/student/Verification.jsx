@@ -44,8 +44,8 @@ const Verification = () => {
       localStorage.setItem("hallTicket", hallTicket);
       localStorage.setItem("studentName", data.studentName || name);
       localStorage.setItem("studentId", data.studentId);
-      localStorage.setItem("examId", data.examId);
-      localStorage.setItem("slotId", data.slotId);
+      localStorage.setItem("student_examId", data.examId);
+      localStorage.setItem("student_slotId", data.slotId);
 
       // login() stores the token; every later student call carries it.
       login({

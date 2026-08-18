@@ -17,7 +17,12 @@ import ExamPicker from "../../components/Admin/ExamPicker";
  */
 
 const Reports = () => {
-  const examId = localStorage.getItem("examId");
+  // Which exam's results are on screen. Separate from the exam being built,
+  // so looking back at last year's results does not change what "Questions"
+  // or "Add Candidates" would open next.
+  const [viewing, setViewing] = useState(() => localStorage.getItem("examId"));
+  const examId = viewing;
+  const [allExams, setAllExams] = useState(null);
 
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -41,6 +46,21 @@ const Reports = () => {
     })();
     return () => { live = false; };
   }, [examId]);
+
+  // Every exam this college has run, so a past paper can be opened directly
+  // instead of only whichever one happens to be current.
+  useEffect(() => {
+    (async () => {
+      try {
+        const list = await api.get("/admin/report");
+        setAllExams(Array.isArray(list) ? list : []);
+        // Nothing open yet? Show the most recent exam rather than an empty page.
+        setViewing((current) => current || (list[0] ? String(list[0].examId) : null));
+      } catch {
+        setAllExams([]);
+      }
+    })();
+  }, []);
 
   const rows = useMemo(() => {
     const list = data?.candidates ?? [];

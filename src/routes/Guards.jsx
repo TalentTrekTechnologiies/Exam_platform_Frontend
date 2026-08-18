@@ -13,7 +13,7 @@ import { tokens } from "../lib/api";
 
 export const RequireVerified = ({ children }) => {
   const location = useLocation();
-  const ready = tokens.getStudent() && localStorage.getItem("examId");
+  const ready = tokens.getStudent() && localStorage.getItem("student_examId");
 
   if (!ready) return <Navigate to="/verify" replace state={{ from: location.pathname }} />;
   return children;

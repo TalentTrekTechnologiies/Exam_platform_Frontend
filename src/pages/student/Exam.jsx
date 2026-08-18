@@ -178,7 +178,7 @@ const Exam = () => {
   }, [currentQuestion?.id, markVisited]);
 
   useEffect(() => {
-    const examId = localStorage.getItem("examId");
+    const examId = localStorage.getItem("student_examId");
     if (examId) examApi.examInfo(examId).then(setExamInfo).catch(() => setExamInfo(null));
   }, []);
 
