@@ -5,6 +5,7 @@ import Card from "../../components/UI/Card";
 import Button from "../../components/UI/Button";
 import { FiClock, FiImage, FiChevronRight, FiCheckCircle, FiShield , FiPlus } from "react-icons/fi";
 import { API_BASE, api, uploadUrl, readAdmin } from "../../lib/api";
+import SittingPicker from "../../components/Admin/SittingPicker";
 
 export default function CreateExam() {
   const navigate = useNavigate();
@@ -18,12 +19,15 @@ export default function CreateExam() {
    * the creation form suggesting sittings existed at all. Stating them here
    * means the exam arrives complete.
    */
-  const [sittings, setSittings] = useState([{ startDate: "", endDate: "" }]);
+  const [sittings, setSittings] = useState([{ date: "", from: "", to: "" }]);
 
   const setSitting = (index, patch) =>
     setSittings((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
 
-  const addSitting = () => setSittings((prev) => [...prev, { startDate: "", endDate: "" }]);
+  // A second sitting is nearly always the same day as the first, so it starts
+  // from that date rather than empty.
+  const addSitting = () =>
+    setSittings((prev) => [...prev, { date: prev[prev.length - 1]?.date || "", from: "", to: "" }]);
   const removeSitting = (index) =>
     setSittings((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
 
@@ -75,8 +79,10 @@ export default function CreateExam() {
       // empty string into a date and rejects the whole request.
       // Ordered so the first and last bound the exam, whatever order they
       // were typed in.
+      // Composed here, where the date and the two times finally come together.
       const usable = sittings
-        .filter((s) => s.startDate && s.endDate && s.endDate > s.startDate)
+        .filter((s) => s.date && s.from && s.to && s.to > s.from)
+        .map((s) => ({ startDate: `${s.date}T${s.from}`, endDate: `${s.date}T${s.to}` }))
         .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
       if (usable.length === 0) {
@@ -217,40 +223,14 @@ export default function CreateExam() {
 
             <div className="space-y-3">
               {sittings.map((sitting, i) => (
-                <div key={i} className="flex flex-wrap items-end gap-3 rounded-xl bg-gray-50 p-3">
-                  <span className="text-[10px] font-bold text-gray-400 uppercase w-full sm:w-20">
-                    Sitting {i + 1}
-                  </span>
-                  <div className="flex-1 min-w-[10rem]">
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Opens</label>
-                    <input
-                      type="datetime-local"
-                      className="bg-transparent w-full text-xs outline-none"
-                      value={sitting.startDate}
-                      onChange={e => setSitting(i, { startDate: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="flex-1 min-w-[10rem]">
-                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Closes</label>
-                    <input
-                      type="datetime-local"
-                      className="bg-transparent w-full text-xs outline-none"
-                      value={sitting.endDate}
-                      onChange={e => setSitting(i, { endDate: e.target.value })}
-                      required
-                    />
-                  </div>
-                  {sittings.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeSitting(i)}
-                      className="text-xs font-semibold text-gray-500 hover:text-red-600"
-                    >
-                      Remove
-                    </button>
-                  )}
-                </div>
+                <SittingPicker
+                  key={i}
+                  index={i}
+                  sitting={sitting}
+                  canRemove={sittings.length > 1}
+                  onChange={(patch) => setSitting(i, patch)}
+                  onRemove={() => removeSitting(i)}
+                />
               ))}
             </div>
 
