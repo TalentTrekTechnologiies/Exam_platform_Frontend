@@ -5,7 +5,7 @@ import Modal from "../../components/UI/Modal";
 import { API_BASE, api, uploadUrl } from "../../lib/api";
 import {
   FiEdit2, FiTrash2, FiPlus, FiSearch, FiImage, FiX, FiUploadCloud,
-  FiAlertTriangle, FiCheck, FiInbox, FiFileText,
+  FiAlertTriangle, FiCheck, FiInbox, FiFileText, FiCopy,
 } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 
@@ -380,6 +380,15 @@ const QuestionManagement = () => {
             <FiFileText /> Import PDF / Word paper
           </button>
 
+          {/* Most colleges run the same paper shape every year, so last year's
+              questions are usually the fastest way to fill a new one. */}
+          <button
+            onClick={() => navigate("/admin/questions/reuse")}
+            className="exam-action-quiet flex h-11 items-center gap-2"
+          >
+            <FiCopy /> Reuse from a previous exam
+          </button>
+
           <label className="flex h-11 cursor-pointer items-center gap-2 rounded-exam border border-gray-300 bg-white px-4 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-400 hover:bg-gray-50">
             <FiUploadCloud className="text-gray-500" />
             <span className="max-w-[10rem] truncate">{csvFile ? csvFile.name : "Choose CSV"}</span>
@@ -434,6 +443,9 @@ const QuestionManagement = () => {
                     className="exam-action-primary flex items-center gap-2"
                   >
                     <FiFileText /> Import a PDF or Word paper
+                  </button>
+                  <button onClick={() => navigate("/admin/questions/reuse")} className="exam-action-quiet flex items-center gap-2">
+                    <FiCopy /> Reuse from a previous exam
                   </button>
                   <button onClick={() => openEditor(null)} className="exam-action-quiet flex items-center gap-2">
                     <FiPlus /> Type one in

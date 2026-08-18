@@ -30,6 +30,7 @@ const StudentUpload = lazy(() => import("./pages/admin/StudentUpload"));
 const Reports = lazy(() => import("./pages/admin/Reports"));
 const Monitor = lazy(() => import("./pages/admin/Monitor"));
 const ImportQuestions = lazy(() => import("./pages/admin/ImportQuestions"));
+const ReuseQuestions = lazy(() => import("./pages/admin/ReuseQuestions"));
 const Publish = lazy(() => import("./pages/admin/Publish"));
 const AddCandidates = lazy(() => import("./pages/admin/AddCandidates"));
 const ReviewPage = lazy(() => import("./pages/admin/ReviewPage"));
@@ -90,6 +91,7 @@ function App() {
             <Route path="/admin/students/add" element={<Admin><AddCandidates /></Admin>} />
             <Route path="/admin/students/upload" element={<Admin><StudentUpload /></Admin>} />
             <Route path="/admin/questions/import" element={<Admin><ImportQuestions /></Admin>} />
+            <Route path="/admin/questions/reuse" element={<Admin><ReuseQuestions /></Admin>} />
             <Route path="/admin/publish" element={<Admin><Publish /></Admin>} />
             <Route path="/admin/monitor" element={<Admin><Monitor /></Admin>} />
             <Route path="/admin/reports" element={<Admin><Reports /></Admin>} />
