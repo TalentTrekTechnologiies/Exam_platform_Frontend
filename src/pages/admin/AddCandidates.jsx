@@ -29,6 +29,16 @@ const AddCandidates = () => {
 
   // Upload route
   const [preview, setPreview] = useState(null);
+
+  /**
+   * Where hall tickets come from: "file" uses the numbers already in the
+   * uploaded list, "generate" numbers the candidates in order.
+   *
+   * Chosen after the file is read rather than before, because until then
+   * nobody knows whether the list even has roll numbers in it.
+   */
+  const [ticketMode, setTicketMode] = useState("file");
+  const [fileHadTickets, setFileHadTickets] = useState(true);
   const [rows, setRows] = useState([]);
   const fileRef = useRef(null);
 
@@ -67,6 +77,14 @@ const AddCandidates = () => {
       const body = await res.json();
       if (!res.ok) { setError(body.message || "That file could not be read."); return; }
       setPreview(body);
+      // A list of bare names needs tickets issuing; one that already carries
+      // roll numbers should keep them unless told otherwise.
+      {
+        const supplied = (body.rows || []).filter((r) => (r.hallTicket || "").trim()).length;
+        const hasTickets = supplied > 0;
+        setFileHadTickets(hasTickets);
+        setTicketMode(hasTickets ? "file" : "generate");
+      }
       setRows(body.rows.map((r) => ({ ...r })));
     } catch {
       setError("Could not reach the server.");
@@ -77,6 +95,43 @@ const AddCandidates = () => {
 
   const updateRow = (i, field, value) =>
     setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value, issue: null } : r)));
+
+  /**
+   * Numbers the candidates in order and writes the result onto the rows.
+   *
+   * Deliberately writes into the same rows the confirm step already sends, so
+   * issuing tickets needs no separate endpoint and what the table shows is
+   * exactly what will be saved. Every ticket stays editable afterwards.
+   */
+  const applyGeneratedTickets = (usePrefix, useWidth) => {
+    const width = Math.max(1, Math.min(8, Number(useWidth) || 3));
+    setRows((prev) => prev.map((r, i) => ({
+      ...r,
+      hallTicket: `${(usePrefix || "").toUpperCase()}${String(i + 1).padStart(width, "0")}`,
+      // The row's complaint was about a missing ticket; it now has one.
+      issue: /hall ticket/i.test(r.issue || "") ? null : r.issue,
+    })));
+  };
+
+  const restoreFileTickets = () => {
+    setRows((prev) => prev.map((r, i) => ({
+      ...r,
+      hallTicket: preview?.rows?.[i]?.hallTicket || "",
+      issue: preview?.rows?.[i]?.issue ?? r.issue,
+    })));
+  };
+
+  /**
+   * Number the candidates as soon as a list without roll numbers is read.
+   *
+   * Without this the screen offers to generate tickets and then shows an empty
+   * column until something is typed, which reads as the offer not having
+   * worked. Runs once per uploaded file; typing a prefix renumbers from there.
+   */
+  useEffect(() => {
+    if (preview && !fileHadTickets) applyGeneratedTickets(prefix, padding);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [preview, fileHadTickets]);
 
   const removeRow = (i) => setRows((prev) => prev.filter((_, idx) => idx !== i));
 
@@ -237,6 +292,85 @@ const AddCandidates = () => {
                 {busy ? "Enrolling…" : `Enrol ${usable} candidate(s)`}
               </button>
             </div>
+          </div>
+
+          {/* How the tickets are decided. Shown after the file is read,
+              because only then is it known whether it carried any. */}
+          <div className="mb-4 rounded-exam border border-gray-200 bg-white px-5 py-4">
+            <p className="font-semibold text-gray-900">How should hall tickets be assigned?</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+              <button
+                onClick={() => { setTicketMode("file"); restoreFileTickets(); }}
+                disabled={!fileHadTickets}
+                className={`flex-1 rounded-exam border px-4 py-3 text-left transition-colors
+                  ${ticketMode === "file"
+                    ? "border-primary-600 bg-primary-50"
+                    : "border-gray-200 hover:bg-gray-50"}
+                  ${fileHadTickets ? "" : "cursor-not-allowed opacity-50"}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">
+                  Use the roll numbers in the file
+                </span>
+                <span className="mt-0.5 block text-xs text-gray-500">
+                  {fileHadTickets
+                    ? "Candidates sign in with the number already on your list."
+                    : "This list has no roll numbers in it."}
+                </span>
+              </button>
+
+              <button
+                onClick={() => { setTicketMode("generate"); applyGeneratedTickets(prefix, padding); }}
+                className={`flex-1 rounded-exam border px-4 py-3 text-left transition-colors
+                  ${ticketMode === "generate"
+                    ? "border-primary-600 bg-primary-50"
+                    : "border-gray-200 hover:bg-gray-50"}`}
+              >
+                <span className="block text-sm font-semibold text-gray-900">
+                  Generate hall tickets for me
+                </span>
+                <span className="mt-0.5 block text-xs text-gray-500">
+                  Numbered in order, e.g. {(prefix || "24CSE") + String(1).padStart(Number(padding) || 3, "0")}
+                </span>
+              </button>
+            </div>
+
+            {ticketMode === "generate" && (
+              <div className="mt-4 grid gap-3 border-t border-gray-200 pt-4 sm:grid-cols-3">
+                <label>
+                  <span className="exam-label mb-1 block">Prefix</span>
+                  <input
+                    value={prefix}
+                    onChange={(e) => {
+                      const next = e.target.value.toUpperCase();
+                      setPrefix(next);
+                      applyGeneratedTickets(next, padding);
+                    }}
+                    placeholder="24CSE"
+                    className="w-full rounded-exam border border-gray-300 px-3 py-2 tabular tracking-wide outline-none focus:border-primary-600"
+                  />
+                </label>
+                <label>
+                  <span className="exam-label mb-1 block">Number width</span>
+                  <input
+                    type="number" min="1" max="8" value={padding}
+                    onChange={(e) => {
+                      const next = e.target.value;
+                      setPadding(next);
+                      applyGeneratedTickets(prefix, next);
+                    }}
+                    className="w-full rounded-exam border border-gray-300 px-3 py-2 tabular outline-none focus:border-primary-600"
+                  />
+                </label>
+                <div className="flex items-end">
+                  <p className="text-sm text-gray-500">
+                    First ticket:{" "}
+                    <span className="mono font-semibold text-gray-800">
+                      {rows[0]?.hallTicket || "—"}
+                    </span>
+                  </p>
+                </div>
+              </div>
+            )}
           </div>
 
           {preview.warnings?.map((w) => (
