@@ -74,9 +74,8 @@ const Sidebar = ({ isOpen, isMobile, onClose }) => {
                 )}
               </div>
               <div>
-                {/* 🔥 REPLACE: Mock EAMCET with admin?.collegeName */}
-                <h1 className="text-xl font-bold truncate max-w-[140px]">
-                  {admin?.collegeName || "Mock EAMCET"}
+                                <h1 className="text-xl font-bold truncate max-w-[140px]">
+                  {admin?.collegeName || PLATFORM_NAME}
                 </h1>
                 <p className="text-xs text-gray-400">Admin Portal</p>
               </div>

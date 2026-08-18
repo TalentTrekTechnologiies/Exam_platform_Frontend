@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { FiBookOpen, FiAlertCircle } from "react-icons/fi";
 import { examApi, clearStudentSession, uploadUrl, INSTITUTION_CODE, PLATFORM_NAME } from "../../lib/api";
+import SignInFrame from "../../components/Layout/SignInFrame";
 
 const Verification = () => {
   const navigate = useNavigate();
@@ -69,38 +70,29 @@ const Verification = () => {
   };
 
   return (
-    <div className="flex min-h-screen flex-col bg-gray-50">
-      <header className="flex h-14 items-center bg-chrome px-6">
-        <div className="flex items-center gap-2.5">
-          {institution?.collegeLogo ? (
-            <img
-              src={uploadUrl(institution.collegeLogo)}
-              alt=""
-              className="h-8 w-8 rounded bg-white/95 object-contain p-0.5"
-              onError={(e) => { e.target.style.display = "none"; }}
-            />
-          ) : (
-            <FiBookOpen className="text-white/80" />
-          )}
-          <span className="text-[13px] font-semibold text-white">
-            {institution?.collegeName || PLATFORM_NAME}
-          </span>
-        </div>
-      </header>
+    <SignInFrame
+      logo={institution?.collegeLogo}
+      title={institution?.collegeName || PLATFORM_NAME}
+      tagline="Online examination. Sign in with the details printed on your hall ticket."
+      notes={[
+        "Have your hall ticket with you before you begin.",
+        "Your answers are saved as you go — a dropped connection loses nothing.",
+        "The clock runs on the exam server, not on this machine.",
+      ]}
+    >
+      <div>
+        <div>
 
-      <main className="flex flex-1 items-center justify-center p-4">
-        <div className="w-full max-w-md">
-
-          <div className="mb-8 text-center">
-            <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+          <div className="mb-8">
+            <h1 className="text-xl font-bold tracking-tight text-slate-900">
               Candidate sign in
             </h1>
-            <p className="mt-2 text-sm text-gray-500">
+            <p className="mt-1 text-sm text-slate-500">
               Enter the details exactly as printed on your hall ticket.
             </p>
           </div>
 
-          <div className="rounded-exam border border-gray-200 bg-white p-8">
+          <div>
             <form onSubmit={handleSubmit} className="space-y-5">
               {apiError && (
                 <div className="flex items-start gap-3 rounded-exam border border-red-200 bg-red-50 px-4 py-3">
@@ -165,8 +157,8 @@ const Verification = () => {
             Do not share your hall ticket number with anyone.
           </p>
         </div>
-      </main>
-    </div>
+      </div>
+    </SignInFrame>
   );
 };
 

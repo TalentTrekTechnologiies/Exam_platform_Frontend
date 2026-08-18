@@ -13,6 +13,8 @@ import Instructions from "./pages/student/Instructions";
 import Exam from "./pages/student/Exam";
 import Result from "./pages/student/Result";
 import Blocked from "./pages/student/Blocked";
+import { useInstitutionBranding } from "./lib/branding";
+import { readAdmin } from "./lib/api";
 
 // ── Admin routes are lazy ───────────────────────────────────────────────────
 // The admin app pulls in chart.js and xlsx, which together dwarf the exam
@@ -61,6 +63,11 @@ const Admin = ({ children, guarded = true }) => (
 const BASENAME = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
 
 function App() {
+  // The tab carries the institution's own name and mark, for every screen
+  // including the exam itself.
+  // Keyed on the signed-in college so the tab follows a sign-in without a reload.
+  useInstitutionBranding(readAdmin()?.collegeName || "");
+
   return (
     <Router basename={BASENAME}>
       <AuthProvider>

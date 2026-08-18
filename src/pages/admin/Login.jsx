@@ -2,7 +2,8 @@ import React, { useState, useEffect } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { FiLock, FiUser, FiEye, FiEyeOff, FiAlertCircle } from "react-icons/fi";
-import { API_BASE, readAdmin, REGISTRATION_ENABLED, PLATFORM_NAME } from "../../lib/api";
+import { API_BASE, readAdmin, REGISTRATION_ENABLED, PLATFORM_NAME, INSTITUTION_CODE, examApi } from "../../lib/api";
+import SignInFrame from "../../components/Layout/SignInFrame";
 
 const AdminLogin = () => {
   const navigate = useNavigate();
@@ -10,6 +11,22 @@ const AdminLogin = () => {
 
   // 👉 STEP 6: Get admin data for the Header (persists name on login screen if already logged once)
   const savedAdmin = readAdmin();
+
+  /**
+   * The institution this deployment belongs to.
+   *
+   * Previously the college's name only appeared if someone had signed in on
+   * this browser before, so a fresh machine on exam morning showed a generic
+   * page. The candidate side already resolves this by code; the staff side now
+   * does the same.
+   */
+  const [institution, setInstitution] = useState(null);
+  useEffect(() => {
+    examApi.institution(INSTITUTION_CODE).then(setInstitution).catch(() => setInstitution(null));
+  }, []);
+
+  const collegeName = institution?.collegeName || savedAdmin?.collegeName || PLATFORM_NAME;
+  const collegeLogo = institution?.collegeLogo || savedAdmin?.collegeLogo || null;
 
   const [credentials, setCredentials] = useState({ username: "", password: "" });
   const [showPassword, setShowPassword] = useState(false);
@@ -56,83 +73,93 @@ const AdminLogin = () => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4 font-sans">
-      <div className="w-full max-w-md bg-white p-10 rounded-2xl shadow-sm border border-slate-200">
-        
-        <div className="mb-8 text-center">
-          {/* 👉 STEP 6: Dynamic College Name */}
-          <h2 className="text-2xl font-bold text-slate-800">
-            {savedAdmin?.collegeName || PLATFORM_NAME}
-          </h2>
-          <p className="text-slate-500 text-sm mt-1">Enter your credentials to access your account.</p>
+    <SignInFrame
+      logo={collegeLogo}
+      title={collegeName}
+      tagline="Staff sign-in for setting papers, enrolling candidates and watching a sitting."
+      notes={[
+        "Build a paper by importing a PDF or Word question paper.",
+        "Enrol a batch and issue hall tickets in one step.",
+        "Watch the hall live, and publish results the moment it closes.",
+      ]}
+    >
+      <h2 className="text-xl font-bold text-slate-900">Sign in</h2>
+      <p className="mt-1 text-sm text-slate-500">
+        Use the staff account your institution issued you.
+      </p>
+
+      <form onSubmit={handleSubmit} className="mt-8 space-y-5">
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Email address
+          </label>
+          <div className="relative">
+            <FiUser className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type="email"
+              autoComplete="username"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-4 text-sm outline-none
+                         transition-colors focus:border-primary-600 focus:ring-4 focus:ring-primary-600/10"
+              placeholder="you@college.edu"
+              value={credentials.username}
+              onChange={(e) => setCredentials({ ...credentials, username: e.target.value })}
+              required
+            />
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5 ml-1">Email Address</label>
-            <div className="relative">
-              <FiUser className="absolute left-3 top-3.5 text-slate-400" />
-              <input
-                type="email"
-                className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
-                placeholder="admin@college.edu"
-                value={credentials.username}
-                onChange={(e) => setCredentials({...credentials, username: e.target.value})}
-                required
-              />
-            </div>
+        <div>
+          <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            Password
+          </label>
+          <div className="relative">
+            <FiLock className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input
+              type={showPassword ? "text" : "password"}
+              autoComplete="current-password"
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-11 pr-11 text-sm outline-none
+                         transition-colors focus:border-primary-600 focus:ring-4 focus:ring-primary-600/10"
+              placeholder="Your password"
+              value={credentials.password}
+              onChange={(e) => setCredentials({ ...credentials, password: e.target.value })}
+              required
+            />
+            <button
+              type="button"
+              aria-label={showPassword ? "Hide password" : "Show password"}
+              className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 transition-colors hover:text-slate-700"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
+            </button>
           </div>
+        </div>
 
-          <div>
-            <label className="block text-xs font-semibold text-slate-500 uppercase mb-1.5 ml-1">Password</label>
-            <div className="relative">
-              <FiLock className="absolute left-3 top-3.5 text-slate-400" />
-              <input
-                type={showPassword ? "text" : "password"}
-                className="w-full pl-10 pr-10 py-2.5 border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none text-sm transition-all"
-                placeholder="••••••••"
-                value={credentials.password}
-                onChange={(e) => setCredentials({...credentials, password: e.target.value})}
-                required
-              />
-              <button 
-                type="button" 
-                className="absolute right-3 top-3.5 text-slate-400 hover:text-blue-500 transition-colors"
-                onClick={() => setShowPassword(!showPassword)}
-              >
-                {showPassword ? <FiEyeOff size={18} /> : <FiEye size={18} />}
-              </button>
-            </div>
+        {error && (
+          <div className="flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+            <FiAlertCircle className="mt-0.5 shrink-0" /> {error}
           </div>
+        )}
 
-          {error && (
-            <div className="flex items-center gap-2 text-red-600 text-xs bg-red-50 p-3 rounded-lg border border-red-100">
-              <FiAlertCircle className="flex-shrink-0" /> {error}
-            </div>
-          )}
+        <button
+          type="submit"
+          disabled={loading}
+          className="h-12 w-full rounded-xl bg-primary-700 text-sm font-semibold text-white shadow-sm
+                     transition-colors hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+        >
+          {loading ? "Signing in…" : "Sign in"}
+        </button>
 
-          <button 
-            type="submit"
-            disabled={loading}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg shadow-sm transition-all active:scale-[0.98] mt-2 disabled:bg-blue-300"
-          >
-            {loading ? "Verifying..." : "Sign In"}
-          </button>
-
-          {/* A dedicated install has no self-registration to invite anyone to. */}
-          {REGISTRATION_ENABLED && (
-            <div className="text-center mt-8 pt-4 border-t border-slate-100">
-              <p className="text-sm text-slate-500">
-                New here?{" "}
-                <Link to="/admin/register" className="text-blue-600 font-semibold hover:underline">
-                  Create an institution account
-                </Link>
-              </p>
-            </div>
-          )}
-        </form>
-      </div>
-    </div>
+        {REGISTRATION_ENABLED && (
+          <p className="pt-1 text-center text-sm text-slate-500">
+            New institution?{" "}
+            <Link to="/admin/register" className="font-semibold text-primary-700 hover:underline">
+              Create an account
+            </Link>
+          </p>
+        )}
+      </form>
+    </SignInFrame>
   );
 };
 
