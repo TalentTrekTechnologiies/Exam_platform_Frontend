@@ -2,6 +2,7 @@ import React, { useEffect, useState, useCallback, useRef } from "react";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiAlertTriangle, FiWifiOff, FiCheckCircle, FiClock, FiUsers, FiRefreshCw, FiFileText } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * Live invigilation.
@@ -93,9 +94,7 @@ const Monitor = () => {
   if (!examId) {
     return (
       <Layout title="Live Monitor" subtitle="Watch the sitting as it happens">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center">
-          <p className="text-gray-600">Open an exam first — the monitor follows the exam you are working on.</p>
-        </div>
+        <ExamPicker what="The live monitor" />
       </Layout>
     );
   }

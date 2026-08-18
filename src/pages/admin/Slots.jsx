@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiPlus, FiTrash2, FiClock, FiAlertTriangle, FiArrowRight } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * Time windows candidates can sit this exam in.
@@ -77,9 +78,7 @@ const Slots = () => {
   if (!examId) {
     return (
       <Layout title="Slots" subtitle="Time windows candidates can sit this exam in">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
-          Open an exam first — slots belong to the exam you are working on.
-        </div>
+        <ExamPicker what="Slots" />
       </Layout>
     );
   }

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
 import { API_BASE, api } from "../../lib/api";
 import {
   FiUploadCloud, FiAlertTriangle, FiCheck, FiHash, FiUsers, FiTrash2, FiArrowRight,
 } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * Getting candidates onto an exam.
@@ -17,6 +18,7 @@ import {
  */
 
 const AddCandidates = () => {
+  const navigate = useNavigate();
   const examId = localStorage.getItem("examId");
   const [mode, setMode] = useState("upload");
   const [slots, setSlots] = useState([]);
@@ -118,9 +120,7 @@ const AddCandidates = () => {
   if (!examId) {
     return (
       <Layout title="Add Candidates" subtitle="Enrol students onto this exam">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
-          Open an exam first — candidates are enrolled onto the exam you are working on.
-        </div>
+        <ExamPicker what="Enrolling candidates" />
       </Layout>
     );
   }
@@ -142,6 +142,17 @@ const AddCandidates = () => {
           <Link to="/admin/students" className="shrink-0 font-semibold underline">
             View roster <FiArrowRight className="inline" />
           </Link>
+        </div>
+      )}
+
+      {saved && (
+        <div className="mb-5 flex flex-wrap gap-2">
+          <button onClick={() => navigate("/admin/publish")} className="exam-action-primary">
+            Next: publish &amp; share the link
+          </button>
+          <button onClick={() => navigate("/admin/slots")} className="exam-action-quiet">
+            Check the slots
+          </button>
         </div>
       )}
 

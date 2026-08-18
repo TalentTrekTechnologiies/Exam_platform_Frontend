@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiCheckCircle, FiAlertTriangle, FiCopy, FiLink, FiLock, FiUnlock } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * Publishing an exam and sharing it with candidates.
@@ -54,9 +55,7 @@ const Publish = () => {
   if (!examId) {
     return (
       <Layout title="Publish Exam" subtitle="Open this exam to candidates and share the link">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
-          Open an exam first.
-        </div>
+        <ExamPicker what="Publishing" />
       </Layout>
     );
   }

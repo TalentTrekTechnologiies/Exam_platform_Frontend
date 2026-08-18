@@ -1,7 +1,9 @@
+import { useNavigate } from "react-router-dom";
 import React, { useState, useRef } from "react";
 import Layout from "../../components/Layout/Layout";
 import { API_BASE, api, uploadUrl } from "../../lib/api";
 import { FiUploadCloud, FiAlertTriangle, FiCheck, FiFileText, FiTrash2 } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * Importing a question paper from a document.
@@ -17,6 +19,7 @@ import { FiUploadCloud, FiAlertTriangle, FiCheck, FiFileText, FiTrash2 } from "r
 const LETTERS = ["A", "B", "C", "D"];
 
 const ImportQuestions = () => {
+  const navigate = useNavigate();
   const examId = localStorage.getItem("examId");
   const [preview, setPreview] = useState(null);
   const [rows, setRows] = useState([]);
@@ -88,9 +91,7 @@ const ImportQuestions = () => {
   if (!examId) {
     return (
       <Layout title="Import Questions" subtitle="Read a question paper from PDF or Word">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
-          Open an exam first — questions are imported into the exam you are working on.
-        </div>
+        <ExamPicker what="Importing a paper" />
       </Layout>
     );
   }
@@ -135,12 +136,22 @@ const ImportQuestions = () => {
               <FiAlertTriangle className="mt-0.5 shrink-0" /> {error}
             </div>
           )}
-          {saved && (
+          {saved && (<>
             <div className="mt-4 flex items-start gap-2 rounded-exam border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-900">
               <FiCheck className="mt-0.5 shrink-0" />
               <span>{saved.summary} {saved.errors?.length > 0 && `${saved.errors.length} row(s) were rejected.`}</span>
             </div>
-          )}
+            {/* The paper is in; say what comes next rather than leaving
+                the sidebar to be searched for it. */}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button onClick={() => navigate("/admin/students/add")} className="exam-action-primary">
+                Next: add candidates
+              </button>
+              <button onClick={() => navigate("/admin/questions")} className="exam-action-quiet">
+                Review the questions
+              </button>
+            </div>
+          </>)}
         </div>
       )}
 

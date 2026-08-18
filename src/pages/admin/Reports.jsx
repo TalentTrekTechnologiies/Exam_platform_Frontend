@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from "react";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiDownload, FiInbox, FiSearch } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * Results for a finished exam.
@@ -76,9 +77,7 @@ const Reports = () => {
   if (!examId) {
     return (
       <Layout title="Results" subtitle="How the cohort did">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
-          Open an exam first — results follow the exam you are working on.
-        </div>
+        <ExamPicker what="Results" />
       </Layout>
     );
   }

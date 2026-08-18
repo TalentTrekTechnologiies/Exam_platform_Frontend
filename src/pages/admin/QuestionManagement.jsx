@@ -7,6 +7,7 @@ import {
   FiEdit2, FiTrash2, FiPlus, FiSearch, FiImage, FiX, FiUploadCloud,
   FiAlertTriangle, FiCheck, FiInbox, FiFileText,
 } from "react-icons/fi";
+import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
  * The question bank for one exam.
@@ -303,9 +304,7 @@ const QuestionManagement = () => {
   if (!examId) {
     return (
       <Layout title="Questions" subtitle="Build the paper">
-        <div className="rounded-exam border border-gray-200 bg-white p-10 text-center text-gray-600">
-          Open an exam first — questions belong to the exam you are working on.
-        </div>
+        <ExamPicker what="The question bank" />
       </Layout>
     );
   }
@@ -530,9 +529,14 @@ const QuestionManagement = () => {
       </div>
 
       {questions.length > 0 && (
-        <div className="mt-6 flex justify-end">
-          <button onClick={() => navigate("/admin/review")} className="exam-action-primary">
+        <div className="mt-6 flex flex-wrap items-center justify-end gap-2">
+          {/* Candidates are what the exam next actually needs; reviewing the
+              paper is worth offering but is not what blocks publishing. */}
+          <button onClick={() => navigate("/admin/review")} className="exam-action-quiet">
             Review &amp; finalise paper
+          </button>
+          <button onClick={() => navigate("/admin/students/add")} className="exam-action-primary">
+            Next: add candidates
           </button>
         </div>
       )}
