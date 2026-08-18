@@ -106,7 +106,11 @@ const tokenFor = (path) =>
 export const clearStudentSession = () => {
   [
     STUDENT_TOKEN_KEY,
-    "exam_user", "hallTicket", "studentName", "studentId", "examId", "slotId", "attemptId",
+    // The candidate's own keys only. "examId" and "slotId" belong to the admin
+    // screens; clearing them here meant a candidate signing out wiped which
+    // exam the invigilator was working on.
+    "exam_user", "hallTicket", "studentName", "studentId",
+    "student_examId", "student_slotId", "attemptId",
   ].forEach((k) => localStorage.removeItem(k));
 
   // exam_pending_*, exam_marked_*, exam_visited_*, exam_violations_*

@@ -112,6 +112,56 @@ const Reports = () => {
 
   return (
     <Layout title="Results" subtitle={data?.examTitle || "How the cohort did"}>
+
+      {/* Which exam's results these are, and every other exam to hand.
+          The screen could previously only ever show whichever exam happened to
+          be open, so a past paper was unreachable without rebuilding it. */}
+      {allExams && allExams.length > 0 && (
+        <div className="mb-5 overflow-hidden rounded-exam border border-gray-200 bg-white">
+          <div className="border-b border-gray-200 px-5 py-3">
+            <p className="text-sm font-semibold text-gray-900">Exams</p>
+            <p className="mt-0.5 text-xs text-gray-500">
+              Choose one to see its results. Looking back here does not change the exam you are building.
+            </p>
+          </div>
+          <div className="max-h-56 overflow-y-auto">
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-gray-100">
+                {allExams.map((e) => {
+                  const open = String(e.examId) === String(viewing);
+                  return (
+                    <tr
+                      key={e.examId}
+                      onClick={() => setViewing(String(e.examId))}
+                      className={`cursor-pointer ${open ? "bg-primary-50" : "hover:bg-gray-50"}`}
+                    >
+                      <td className="px-5 py-2.5">
+                        <span className={`block truncate font-semibold ${open ? "text-primary-800" : "text-gray-900"}`}>
+                          {e.examTitle}
+                        </span>
+                        <span className="mt-0.5 block text-xs text-gray-500">
+                          {e.startDate ? String(e.startDate).replace("T", " ").slice(0, 16) : "no date"}
+                          {e.published ? "" : " · not published"}
+                        </span>
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-xs text-gray-600 whitespace-nowrap">
+                        {e.submittedCount}/{e.totalCandidates} sat
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-xs text-gray-600 whitespace-nowrap">
+                        {e.averageScore == null ? "—" : `avg ${e.averageScore}`}
+                      </td>
+                      <td className="px-5 py-2.5 text-right text-xs text-gray-600 whitespace-nowrap">
+                        {e.topScore == null ? "—" : `top ${e.topScore}`}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {loading ? (
         <div className="rounded-exam border border-gray-200 bg-white p-12 text-center text-sm text-gray-500">
           Loading results…
