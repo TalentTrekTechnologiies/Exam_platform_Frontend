@@ -3,12 +3,29 @@ import { useNavigate, Link } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
 import Card from "../../components/UI/Card";
 import Button from "../../components/UI/Button";
-import { FiClock, FiImage, FiChevronRight, FiCheckCircle, FiShield } from "react-icons/fi";
+import { FiClock, FiImage, FiChevronRight, FiCheckCircle, FiShield , FiPlus } from "react-icons/fi";
 import { API_BASE, api, uploadUrl, readAdmin } from "../../lib/api";
 
 export default function CreateExam() {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
+
+  /**
+   * When candidates may sit, one entry per sitting.
+   *
+   * A college running a morning and an evening batch had to create the exam,
+   * find the Slots screen, and add the second window there — with nothing on
+   * the creation form suggesting sittings existed at all. Stating them here
+   * means the exam arrives complete.
+   */
+  const [sittings, setSittings] = useState([{ startDate: "", endDate: "" }]);
+
+  const setSitting = (index, patch) =>
+    setSittings((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
+
+  const addSitting = () => setSittings((prev) => [...prev, { startDate: "", endDate: "" }]);
+  const removeSitting = (index) =>
+    setSittings((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
 
   const [exam, setExam] = useState({
     collegeName: "",
@@ -56,11 +73,26 @@ export default function CreateExam() {
     try {
       // Empty date fields must go as null, not "" — the server cannot parse an
       // empty string into a date and rejects the whole request.
+      // Ordered so the first and last bound the exam, whatever order they
+      // were typed in.
+      const usable = sittings
+        .filter((s) => s.startDate && s.endDate && s.endDate > s.startDate)
+        .sort((a, b) => a.startDate.localeCompare(b.startDate));
+
+      if (usable.length === 0) {
+        alert("Add at least one sitting, with an end time after its start.");
+        setLoading(false);
+        return;
+      }
+
       const payload = {
         ...exam,
         duration: Number(exam.duration) || 0,
-        startDate: exam.startDate || null,
-        endDate: exam.endDate || null,
+        // The exam's own window spans every sitting, so an exam that runs
+        // morning and evening reads correctly wherever it is summarised.
+        startDate: usable.length ? usable[0].startDate : null,
+        endDate: usable.length ? usable[usable.length - 1].endDate : null,
+        slots: usable.map((s) => ({ startTime: s.startDate, endTime: s.endDate })),
         // The server stores the marking scheme under these names, and applies
         // it to any imported question that doesn't declare its own. Sending
         // only positiveMarks/negativeMarks (as this did) meant the scheme was
@@ -169,23 +201,66 @@ export default function CreateExam() {
           <Card className="p-6 border-none shadow-sm ring-1 ring-gray-200">
             <h2 className="font-bold mb-4 text-gray-800 flex items-center gap-2"><FiClock className="text-indigo-500"/> Timing</h2>
             <p className="-mt-2 mb-4 text-xs text-gray-500">
-              Candidates can sign in between these times. This becomes the exam&apos;s first slot
-              automatically — add more from the Slots page only if you need a second sitting.
+              Add one sitting per batch. Candidates are enrolled into a particular sitting,
+              so a morning and an evening group can take the same paper at different times.
             </p>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-              <div className="p-3 bg-gray-50 rounded-xl">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Duration (min)</label>
-                <input type="number" className="bg-transparent w-full font-bold text-gray-700 outline-none" value={exam.duration} onChange={e => setExam({...exam, duration: e.target.value})} />
-              </div>
-              <div className="p-3 bg-gray-50 rounded-xl">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Starts At</label>
-                <input type="datetime-local" className="bg-transparent w-full text-xs outline-none" onChange={e => setExam({...exam, startDate: e.target.value})} required />
-              </div>
-              <div className="p-3 bg-gray-50 rounded-xl">
-                <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Ends At</label>
-                <input type="datetime-local" className="bg-transparent w-full text-xs outline-none" onChange={e => setExam({...exam, endDate: e.target.value})} required />
-              </div>
+
+            <div className="p-3 bg-gray-50 rounded-xl mb-4 max-w-xs">
+              <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Duration per candidate (min)</label>
+              <input
+                type="number"
+                className="bg-transparent w-full font-bold text-gray-700 outline-none"
+                value={exam.duration}
+                onChange={e => setExam({ ...exam, duration: e.target.value })}
+              />
             </div>
+
+            <div className="space-y-3">
+              {sittings.map((sitting, i) => (
+                <div key={i} className="flex flex-wrap items-end gap-3 rounded-xl bg-gray-50 p-3">
+                  <span className="text-[10px] font-bold text-gray-400 uppercase w-full sm:w-20">
+                    Sitting {i + 1}
+                  </span>
+                  <div className="flex-1 min-w-[10rem]">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Opens</label>
+                    <input
+                      type="datetime-local"
+                      className="bg-transparent w-full text-xs outline-none"
+                      value={sitting.startDate}
+                      onChange={e => setSitting(i, { startDate: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="flex-1 min-w-[10rem]">
+                    <label className="block text-[10px] font-bold text-gray-400 uppercase mb-1">Closes</label>
+                    <input
+                      type="datetime-local"
+                      className="bg-transparent w-full text-xs outline-none"
+                      value={sitting.endDate}
+                      onChange={e => setSitting(i, { endDate: e.target.value })}
+                      required
+                    />
+                  </div>
+                  {sittings.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeSitting(i)}
+                      className="text-xs font-semibold text-gray-500 hover:text-red-600"
+                    >
+                      Remove
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              type="button"
+              onClick={addSitting}
+              className="mt-3 flex items-center gap-1.5 text-sm font-semibold text-indigo-600 hover:underline"
+            >
+              <FiPlus /> Add another sitting
+            </button>
           </Card>
 
           {/* Section 3: Scoring Rules */}
