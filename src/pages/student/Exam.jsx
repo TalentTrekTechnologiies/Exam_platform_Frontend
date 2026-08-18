@@ -154,6 +154,7 @@ const Exam = () => {
   const reEntering = useRef(false);
   const mediaStream = useRef(null);
   const videoRef = useRef(null);
+  const frameSender = useRef(null);
   const faceWatch = useRef(null);
 
   const candidateName = localStorage.getItem("studentName") || "Candidate";
@@ -202,6 +203,12 @@ const Exam = () => {
             onStatus: (s) => setCameraStatus(s.state),
           });
           faceWatch.current.start();
+
+          // The invigilator's view of this seat. Independent of faceWatch:
+          // one decides whether to raise a flag, the other simply shows a
+          // person what the camera sees.
+          frameSender.current = createFrameSender({ videoEl: videoRef.current, attemptId });
+          frameSender.current.start();
         }
       })
       .catch(() => { if (!cancelled) navigate("/blocked", { replace: true }); });

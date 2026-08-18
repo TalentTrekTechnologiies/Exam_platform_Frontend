@@ -3,6 +3,7 @@ import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiAlertTriangle, FiWifiOff, FiCheckCircle, FiClock, FiUsers, FiRefreshCw, FiFileText } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
+import CameraWall from "../../components/Admin/CameraWall";
 
 /**
  * Live invigilation.
@@ -42,6 +43,7 @@ const Monitor = () => {
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("ALL");
+  const [view, setView] = useState("list");
   const [live, setLive] = useState(true);
   const [lastRefresh, setLastRefresh] = useState(null);
   const [preparing, setPreparing] = useState(false);
@@ -205,6 +207,48 @@ const Monitor = () => {
         )}
       </div>
 
+      {/* Cameras are pictures a few seconds apart rather than live video:
+
+          a hall of 500 live feeds is about 125 Mbps and no browser decodes
+
+          500 videos at once. Stills answer what invigilation asks. */}
+
+      <div className="mb-4 flex gap-2">
+
+        {[["list", "Roll call"], ["cameras", "Cameras"]].map(([key, label]) => (
+
+          <button
+
+            key={key}
+
+            onClick={() => setView(key)}
+
+            className={`rounded-exam px-4 py-2 text-sm font-semibold transition-colors ${
+
+              view === key ? "bg-primary-700 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
+
+            }`}
+
+          >
+
+            {label}
+
+          </button>
+
+        ))}
+
+      </div>
+
+
+      {view === "cameras" && (
+
+        <CameraWall examId={examId} candidates={data?.candidates || []} />
+
+      )}
+
+
+      {view === "list" && (
+
       <div className="overflow-x-auto rounded-exam border border-gray-200 bg-white">
         <table className="w-full min-w-[46rem] text-sm">
           <thead>
@@ -260,6 +304,8 @@ const Monitor = () => {
           </tbody>
         </table>
       </div>
+
+      )}
     </Layout>
   );
 };
