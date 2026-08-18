@@ -6,6 +6,7 @@ import {
   FiUploadCloud, FiAlertTriangle, FiCheck, FiHash, FiUsers, FiTrash2, FiArrowRight,
 } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
+import ExistingStudents from "../../components/Admin/ExistingStudents";
 
 /**
  * Getting candidates onto an exam.
@@ -237,7 +238,9 @@ const AddCandidates = () => {
       </div>
 
       <div className="mb-5 flex gap-2">
-        {[["upload", "Upload a list", FiUploadCloud], ["generate", "Generate hall tickets", FiHash]].map(([key, label, Icon]) => (
+        {[["upload", "Upload a list", FiUploadCloud],
+            ["existing", "Choose existing candidates", FiUsers],
+            ["generate", "Generate hall tickets", FiHash]].map(([key, label, Icon]) => (
           <button
             key={key}
             onClick={() => { setMode(key); reset(); }}
@@ -248,6 +251,14 @@ const AddCandidates = () => {
           </button>
         ))}
       </div>
+
+      {mode === "existing" && (
+        <ExistingStudents
+          examId={examId}
+          slotId={slotId}
+          onAssigned={(report) => setSaved(report)}
+        />
+      )}
 
       {mode === "upload" && !preview && (
         <div className="rounded-exam border border-gray-200 bg-white p-8">
