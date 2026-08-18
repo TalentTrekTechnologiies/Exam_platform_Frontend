@@ -207,7 +207,14 @@ const Exam = () => {
           // The invigilator's view of this seat. Independent of faceWatch:
           // one decides whether to raise a flag, the other simply shows a
           // person what the camera sees.
-          frameSender.current = createFrameSender({ videoEl: videoRef.current, attemptId });
+          frameSender.current = createFrameSender({
+            videoEl: videoRef.current,
+            attemptId,
+            // A camera that is covered or unlit is logged for the invigilator.
+            // Not a strike: a weak bulb is not cheating, and this must never
+            // end anybody's exam by itself.
+            onObservation: (type, detail) => recordViolation(type, detail),
+          });
           frameSender.current.start();
         }
       })
@@ -567,20 +574,39 @@ const Exam = () => {
                            ${showPalette ? "absolute inset-0 z-20 flex lg:relative" : "hidden"}`}>
 
           <div className="flex shrink-0 items-center gap-3 border-b border-gray-200 px-5 py-4">
-            {examInfo?.enableCamera ? (
-              <video data-camera-status={cameraStatus || "off"} ref={videoRef} autoPlay muted playsInline
-                     className="h-12 w-12 shrink-0 rounded-exam bg-chrome object-cover" />
-            ) : (
-              <div className="grid h-12 w-12 shrink-0 place-items-center rounded-exam
-                              bg-chrome text-sm font-semibold text-white">
-                {initialsOf(candidateName)}
-              </div>
-            )}
+            <div className="grid h-12 w-12 shrink-0 place-items-center rounded-exam
+                            bg-chrome text-sm font-semibold text-white">
+              {initialsOf(candidateName)}
+            </div>
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold leading-tight text-gray-900">{candidateName}</p>
               <p className="truncate text-xs leading-tight text-gray-500 tabular">{hallTicket}</p>
             </div>
           </div>
+
+          {examInfo?.enableCamera && (
+            /* Shown properly, not as a 48px square in the header. A candidate
+               who cannot see their own camera cannot tell that it is covered,
+               aimed at the ceiling, or showing an unlit room - and the first
+               they would hear of it is being questioned afterwards. */
+            <div className="shrink-0 border-b border-gray-200 px-5 py-4">
+              <div className="relative overflow-hidden rounded-exam bg-chrome">
+                <video
+                  data-camera-status={cameraStatus || "off"}
+                  ref={videoRef}
+                  autoPlay muted playsInline
+                  className="aspect-[4/3] w-full object-cover"
+                />
+                <span className="absolute left-2 top-2 flex items-center gap-1.5 rounded bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-white">
+                  <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+                  Camera on
+                </span>
+              </div>
+              <p className="mt-2 text-[11px] leading-snug text-gray-500">
+                Your invigilator can see this. Keep your face visible and well lit.
+              </p>
+            </div>
+          )}
 
           <div className="flex-1 overflow-y-auto px-5 py-5">
             <QuestionPalette
