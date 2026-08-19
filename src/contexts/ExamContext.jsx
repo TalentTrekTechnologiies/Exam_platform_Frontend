@@ -38,8 +38,41 @@ const readJson = (key, fallback) => {
   }
 };
 
+/**
+ * Whether this screen is one a candidate sits an exam on.
+ *
+ * Read from the address bar rather than the router, because the provider sits
+ * above the router and has no route of its own. Compared against the app's
+ * mount point so it stays correct when served under a subpath such as /online.
+ */
+const EXAM_SCREENS = ["/instructions", "/exam", "/result"];
+
+function onExamScreen() {
+  if (typeof window === "undefined") return false;
+  const base = (import.meta.env.BASE_URL || "/").replace(/\/$/, "");
+  const path = window.location.pathname.slice(base.length) || "/";
+  return EXAM_SCREENS.some((screen) => path === screen || path.startsWith(`${screen}/`));
+}
+
 export const ExamProvider = ({ children }) => {
-  const [attemptId, setAttemptId] = useState(() => localStorage.getItem("attemptId"));
+  /**
+   * The attempt this browser is part-way through — but only where an attempt
+   * has any business being.
+   *
+   * This provider wraps the whole application, so it used to resume from
+   * localStorage on every screen. A machine that had been used by a candidate
+   * kept an `attemptId` behind, and opening the STAFF sign-in on that machine
+   * fired /student/paper, /student/remaining and /student/responses for a
+   * finished attempt. They answered 401 on the stale candidate token, the
+   * global handler took that to mean "a candidate's session expired", and
+   * replaced the page with the candidate sign-in. Staff could not reach their
+   * own login screen at all, and nothing on the page explained why.
+   *
+   * The exam screens are the only ones that need this, so they are the only
+   * ones that get it.
+   */
+  const [attemptId, setAttemptId] = useState(() =>
+    (onExamScreen() ? localStorage.getItem("attemptId") : null));
   const [questions, setQuestions] = useState([]);
   const [answers, setAnswers] = useState({});
   const [markedForReview, setMarkedForReview] = useState({});

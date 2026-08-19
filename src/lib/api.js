@@ -257,7 +257,14 @@ export function installAuthFetch() {
       if (path.includes("/student/")) {
         tokens.clearStudent();
         const to = appPath("/verify");
-        if (!window.location.pathname.startsWith(to)) window.location.replace(to);
+        // Never drag a member of staff to the candidate sign-in. A machine used
+        // by a candidate keeps their session behind, and a stale candidate call
+        // firing anywhere in the admin app would otherwise replace the page
+        // they asked for with the wrong sign-in screen entirely.
+        const onAdminScreen = window.location.pathname.startsWith(appPath("/admin"));
+        if (!onAdminScreen && !window.location.pathname.startsWith(to)) {
+          window.location.replace(to);
+        }
       } else {
         tokens.clearAdmin();
         const to = appPath("/admin/login");
