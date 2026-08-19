@@ -73,6 +73,7 @@ const Verification = () => {
     <SignInFrame
       logo={institution?.collegeLogo}
       title={institution?.collegeName || PLATFORM_NAME}
+      paused={isLoading}
       tagline="Online examination. Sign in with the details printed on your hall ticket."
       notes={[
         "Have your hall ticket with you before you begin.",

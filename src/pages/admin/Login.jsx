@@ -76,6 +76,7 @@ const AdminLogin = () => {
     <SignInFrame
       logo={collegeLogo}
       title={collegeName}
+      paused={loading}
       tagline="Staff sign-in for setting papers, enrolling candidates and watching a sitting."
       notes={[
         "Build a paper by importing a PDF or Word question paper.",

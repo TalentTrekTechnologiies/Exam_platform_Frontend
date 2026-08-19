@@ -67,6 +67,21 @@ export const appPath = (path) => {
   return `${base}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
+/**
+ * What the sign-in panel is dressed with.
+ *
+ * Paths under the app's own public folder, so swapping an institution is
+ * replacing three files rather than editing a component — and either
+ * can be pointed elsewhere from the build environment for a deployment that
+ * keeps its assets on a CDN. Both are only a fallback: a logo uploaded in Exam
+ * Settings always wins, because that one follows the account rather than the
+ * build.
+ */
+export const SIGNIN_MEDIA = {
+  logoIntro: import.meta.env.VITE_SIGNIN_LOGO_INTRO || "/branding/logo-intro.webm",
+  logoStill: import.meta.env.VITE_SIGNIN_LOGO || "/branding/logo.webp",
+};
+
 /** Resolves an uploaded filename to a servable URL. Accepts full URLs unchanged. */
 export const uploadUrl = (filename) => {
   if (!filename) return null;
