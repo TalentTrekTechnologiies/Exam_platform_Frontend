@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
-import { FiDownload, FiInbox, FiSearch } from "react-icons/fi";
+import { FiDownload, FiInbox, FiSearch, FiEye, FiEyeOff, FiAlertTriangle } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
@@ -28,6 +28,8 @@ const Reports = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [query, setQuery] = useState("");
+  const [releasing, setReleasing] = useState(false);
+  const [releaseError, setReleaseError] = useState("");
 
   useEffect(() => {
     if (!examId) { setLoading(false); return; }
@@ -110,8 +112,75 @@ const Reports = () => {
     ["Top score", data?.topScore ?? "—"],
   ];
 
+  /**
+   * Announcing results, or withdrawing them again.
+   *
+   * Scores are held from candidates until this is pressed. Staff have seen
+   * every mark on this page throughout — the hold exists so a college can
+   * moderate before it announces, not to keep anything from the people
+   * running the exam.
+   */
+  const setReleased = async (release) => {
+    if (!examId) return;
+    if (!release && !window.confirm(
+      "Withdraw the results?\n\nCandidates who have already seen their scorecard "
+      + "will stop being able to open it."
+    )) return;
+
+    setReleasing(true);
+    setReleaseError("");
+    try {
+      const state = await api.post(
+        `/admin/exam/${examId}/${release ? "release-results" : "hold-results"}`, {});
+      setData((d) => (d ? { ...d, resultsReleased: state.resultsReleased } : d));
+      setAllExams((list) => (list || []).map((e) =>
+        String(e.examId) === String(examId)
+          ? { ...e, resultsReleased: state.resultsReleased } : e));
+    } catch (e) {
+      setReleaseError(e.message || "Could not change whether results are out.");
+    } finally {
+      setReleasing(false);
+    }
+  };
+
+  const released = data?.resultsReleased === true;
+
   return (
     <Layout title="Results" subtitle={data?.examTitle || "How the cohort did"}>
+
+      {data && (
+        <div className={`mb-5 flex flex-wrap items-center justify-between gap-4 rounded-exam border px-5 py-4
+                         ${released ? "border-green-200 bg-green-50" : "border-amber-300 bg-amber-50"}`}>
+          <div className="flex items-start gap-3">
+            <span className={`mt-0.5 text-lg ${released ? "text-green-700" : "text-amber-700"}`}>
+              {released ? <FiEye /> : <FiEyeOff />}
+            </span>
+            <div>
+              <p className={`text-sm font-semibold ${released ? "text-green-900" : "text-amber-900"}`}>
+                {released ? "Results are out" : "Results are held"}
+              </p>
+              <p className={`mt-0.5 text-xs ${released ? "text-green-800" : "text-amber-800"}`}>
+                {released
+                  ? "Candidates can open their own scorecard. Everything on this page stays visible to staff either way."
+                  : "Candidates are told their paper was received, and nothing more. Release them once the marks are settled."}
+              </p>
+            </div>
+          </div>
+          <button
+            onClick={() => setReleased(!released)}
+            disabled={releasing}
+            className={released ? "exam-action-quiet" : "exam-action-primary"}
+          >
+            {releasing ? "Working…" : released ? "Withdraw results" : "Release results"}
+          </button>
+        </div>
+      )}
+
+      {releaseError && (
+        <div className="mb-5 flex items-start gap-2 rounded-exam border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
+          <FiAlertTriangle className="mt-0.5 shrink-0" /> {releaseError}
+        </div>
+      )}
 
       {/* Which exam's results these are, and every other exam to hand.
           The screen could previously only ever show whichever exam happened to
@@ -142,6 +211,7 @@ const Reports = () => {
                         <span className="mt-0.5 block text-xs text-gray-500">
                           {e.startDate ? String(e.startDate).replace("T", " ").slice(0, 16) : "no date"}
                           {e.published ? "" : " · not published"}
+                          {e.published && !e.resultsReleased ? " · results held" : ""}
                         </span>
                       </td>
                       <td className="px-4 py-2.5 text-right text-xs text-gray-600 whitespace-nowrap">

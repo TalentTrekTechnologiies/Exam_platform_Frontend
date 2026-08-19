@@ -11,6 +11,31 @@ import { FiAlertCircle, FiMaximize, FiWifiOff, FiGrid, FiX } from "react-icons/f
 
 const MAX_WARNINGS = 3;
 
+/**
+ * Fullscreen, asked of the document rather than assumed.
+ *
+ * Every browser answers one of these; a build that only checks the unprefixed
+ * property believes a prefixed browser is windowed — or worse, believes it is
+ * fullscreen when it is not.
+ */
+const inFullscreen = () => !!(
+  document.fullscreenElement
+  || document.webkitFullscreenElement
+  || document.mozFullScreenElement
+  || document.msFullscreenElement
+);
+
+// Only the unprefixed event was listened for, so on a browser that emits just
+// its prefixed name, leaving fullscreen raised nothing at all.
+const FS_EVENTS = [
+  "fullscreenchange", "webkitfullscreenchange", "mozfullscreenchange", "MSFullscreenChange",
+];
+
+// Checked every second regardless of events. Escape is handled by the browser
+// itself and cannot be prevented, so catching the exit is the whole defence —
+// and it must not depend on an event some browser may never send.
+const FULLSCREEN_POLL_MS = 1000;
+
 const initialsOf = (name = "") =>
   name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "—";
 
@@ -152,6 +177,8 @@ const Exam = () => {
   const started = useRef(false);
   const submittingRef = useRef(false);
   const reEntering = useRef(false);
+  const fullscreenUnavailable = useRef(false);
+  const outsideFullscreen = useRef(false);
   const mediaStream = useRef(null);
   const videoRef = useRef(null);
   const frameSender = useRef(null);
@@ -278,11 +305,15 @@ const Exam = () => {
   // ── Fullscreen & proctoring ──────────────────────────────────────────────
   const enterFullscreen = useCallback(() => {
     const el = document.documentElement;
-    const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+    const req = el.requestFullscreen || el.webkitRequestFullscreen
+             || el.mozRequestFullScreen || el.msRequestFullscreen;
 
     if (!req) {
       // Kiosk browsers may not expose the API; blocking entry would strand the
-      // candidate, so let them through in windowed mode.
+      // candidate, so let them through in windowed mode. Recorded, so the
+      // watchdog below does not spend the exam reporting a fullscreen that was
+      // never there to leave.
+      fullscreenUnavailable.current = true;
       setFsError("Fullscreen is unavailable here. Continuing in windowed mode.");
       started.current = true;
       setIsFullscreen(true);
@@ -291,7 +322,18 @@ const Exam = () => {
 
     reEntering.current = true;
     Promise.resolve(req.call(el))
-      .then(() => {
+      .then(async () => {
+        // The prefixed implementations return undefined rather than a promise,
+        // so the call resolving says nothing about whether it worked. That was
+        // being taken as success: the candidate was treated as sitting a locked
+        // fullscreen exam while their browser had stayed windowed throughout,
+        // and nothing they did afterwards counted as a breach.
+        for (let i = 0; i < 12 && !inFullscreen(); i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        if (!inFullscreen()) throw new Error("fullscreen did not take effect");
+
+        outsideFullscreen.current = false;
         setIsFullscreen(true);
         setBlocked(false);
         setFsError("");
@@ -300,6 +342,7 @@ const Exam = () => {
       })
       .catch(() => {
         reEntering.current = false;
+        setIsFullscreen(false);
         setFsError("Your browser blocked fullscreen. Allow it and try again.");
       });
   }, []);
@@ -312,28 +355,70 @@ const Exam = () => {
     else setWarning({ count, reason });
   }, [recordViolation, status]);
 
+  /**
+   * The exam is under lock from the moment it is on screen.
+   *
+   * This flag was set only by the button on the fullscreen gate, and every
+   * protection downstream reads it first. A candidate who reached fullscreen
+   * any other way — F11 on the gate screen is enough on some browsers — passed
+   * the gate with it still unset and sat the whole paper with Escape, copy,
+   * paste and the developer tools all working normally. That is what the few
+   * candidates were doing.
+   */
   useEffect(() => {
-    const onFsChange = () => {
-      const full = !!(document.fullscreenElement || document.webkitFullscreenElement);
-      setIsFullscreen(full);
-      if (!full && started.current && !submittingRef.current && !reEntering.current) {
-        flagViolation("You exited fullscreen.", "fullscreen", "FULLSCREEN_EXIT");
-      }
-    };
+    if (status === "READY" && (isFullscreen || inFullscreen())) started.current = true;
+  }, [status, isFullscreen]);
+
+  /**
+   * One departure from fullscreen, one warning.
+   *
+   * Both the event and the watchdog below report the same exit, and the
+   * watchdog keeps reporting it for as long as the candidate is outside.
+   * Counted naively that is three strikes within three seconds — a candidate
+   * who catches Escape with their thumb would have their paper auto-submitted
+   * before they could read the message asking them to come back. The exit is
+   * counted once and not counted again until fullscreen has been regained.
+   */
+  const noteFullscreenState = useCallback((full) => {
+    setIsFullscreen(full);
+    if (full) { outsideFullscreen.current = false; return; }
+    if (outsideFullscreen.current) return;
+    if (!started.current || submittingRef.current || reEntering.current) return;
+    outsideFullscreen.current = true;
+    flagViolation("You exited fullscreen.", "fullscreen", "FULLSCREEN_EXIT");
+  }, [flagViolation]);
+
+  useEffect(() => {
+    const onFsChange = () => noteFullscreenState(inFullscreen());
     const onVisibility = () => {
       if (document.hidden) flagViolation("You switched tabs or minimised the window.", "dialog", "TAB_SWITCH");
     };
     const onBlur = () => flagViolation("You switched to another application.", "dialog", "APP_SWITCH");
 
-    document.addEventListener("fullscreenchange", onFsChange);
+    FS_EVENTS.forEach((ev) => document.addEventListener(ev, onFsChange));
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("blur", onBlur);
     return () => {
-      document.removeEventListener("fullscreenchange", onFsChange);
+      FS_EVENTS.forEach((ev) => document.removeEventListener(ev, onFsChange));
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("blur", onBlur);
     };
-  }, [flagViolation]);
+  }, [flagViolation, noteFullscreenState]);
+
+  /**
+   * The watchdog: asks the document once a second whether it is still
+   * fullscreen, whatever any event did or did not say.
+   *
+   * Escape leaves fullscreen at the browser level and no page can prevent it,
+   * so the exit has to be noticed rather than stopped. Relying on the event
+   * alone left candidates on browsers that never sent one writing on in a
+   * plain window, pressing Escape as often as they liked.
+   */
+  useEffect(() => {
+    if (status !== "READY" || fullscreenUnavailable.current) return undefined;
+    const t = setInterval(() => noteFullscreenState(inFullscreen()), FULLSCREEN_POLL_MS);
+    return () => clearInterval(t);
+  }, [status, noteFullscreenState]);
 
   useEffect(() => {
     const onBeforeUnload = (e) => {
@@ -350,31 +435,75 @@ const Exam = () => {
     const onKeyDown = (e) => {
       if (!started.current || status !== "READY") return;
 
+      // A dead key or an IME composition can arrive with no key at all, and
+      // calling toLowerCase() on it threw — taking the rest of this handler,
+      // including the shortcut blocking below, down with it.
+      const key = typeof e.key === "string" ? e.key : "";
+      const lower = key.toLowerCase();
+
       const blockedKeys = ["Escape", "F1", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "PrintScreen"];
-      if (blockedKeys.includes(e.key)) e.preventDefault();
-      if ((e.ctrlKey || e.metaKey) && ["c", "v", "x", "a", "p", "s", "u"].includes(e.key.toLowerCase())) e.preventDefault();
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c"].includes(e.key.toLowerCase())) e.preventDefault();
+      if (blockedKeys.includes(key)) e.preventDefault();
+      // Insert carries the old clipboard shortcuts: Ctrl+Insert copies and
+      // Shift+Insert pastes on every desktop browser, and neither was covered.
+      if ((e.ctrlKey || e.metaKey || e.shiftKey) && key === "Insert") e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && ["c", "v", "x", "a", "p", "s", "u"].includes(lower)) e.preventDefault();
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c"].includes(lower)) e.preventDefault();
 
       if (showSummary) return;
-      if (e.key === "ArrowRight") next();
-      if (e.key === "ArrowLeft") setCurrentIndex((i) => Math.max(i - 1, 0));
+      if (key === "ArrowRight") next();
+      if (key === "ArrowLeft") setCurrentIndex((i) => Math.max(i - 1, 0));
 
       // 1–4 selects an option, the way a practised candidate works a paper.
-      const slot = Number(e.key);
+      const slot = Number(key);
       if (slot >= 1 && slot <= 4 && currentQuestion?.options?.[slot - 1]) {
         saveAnswer(currentQuestion.id, currentQuestion.options[slot - 1].id);
       }
     };
 
+    // Capture, so a handler on the question itself cannot swallow the event
+    // before this one is reached.
     const prevent = (e) => { if (started.current && status === "READY") e.preventDefault(); };
+    const events = [
+      "contextmenu", "copy", "cut", "paste",
+      // Selecting the text and dragging it into another window copies it
+      // without ever raising a copy event, which left the paper walkable out
+      // of the browser entirely.
+      "dragstart", "selectstart",
+    ];
 
-    document.addEventListener("keydown", onKeyDown);
-    ["contextmenu", "copy", "cut", "paste"].forEach((ev) => document.addEventListener(ev, prevent));
+    document.addEventListener("keydown", onKeyDown, true);
+    events.forEach((ev) => document.addEventListener(ev, prevent, true));
     return () => {
-      document.removeEventListener("keydown", onKeyDown);
-      ["contextmenu", "copy", "cut", "paste"].forEach((ev) => document.removeEventListener(ev, prevent));
+      document.removeEventListener("keydown", onKeyDown, true);
+      events.forEach((ev) => document.removeEventListener(ev, prevent, true));
     };
   }, [status, showSummary, next, currentQuestion, saveAnswer]);
+
+  /**
+   * Nothing on the paper is selectable while it is being sat.
+   *
+   * Blocking the copy event alone still let a candidate sweep the question
+   * text and take it with a browser menu or a drag; with no selection to
+   * begin with there is nothing for any of those routes to carry. The paper
+   * is multiple choice, so no candidate needs to select text to answer it.
+   */
+  useEffect(() => {
+    if (status !== "READY") return undefined;
+    const body = document.body;
+    const previous = {
+      user: body.style.userSelect,
+      webkit: body.style.webkitUserSelect,
+      touch: body.style.webkitTouchCallout,
+    };
+    body.style.userSelect = "none";
+    body.style.webkitUserSelect = "none";
+    body.style.webkitTouchCallout = "none";
+    return () => {
+      body.style.userSelect = previous.user;
+      body.style.webkitUserSelect = previous.webkit;
+      body.style.webkitTouchCallout = previous.touch;
+    };
+  }, [status]);
 
   // ── Render ───────────────────────────────────────────────────────────────
 

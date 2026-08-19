@@ -71,6 +71,43 @@ const Result = () => {
     );
   }
 
+  /**
+   * Submitted, but the college has not announced results yet.
+   *
+   * This is a normal end to an exam, not a failure, so it gets a page of its
+   * own rather than the error screen — a candidate who has just sat three
+   * hours should be told their paper is safely in, not shown something that
+   * reads like it was lost.
+   */
+  if (result && result.resultsReleased === false) {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center gap-5 bg-gray-50 p-6 text-center">
+        <div className="grid h-16 w-16 place-items-center rounded-full bg-green-100 text-3xl text-green-600">
+          <FiCheckCircle />
+        </div>
+        <div>
+          <h1 className="text-xl font-semibold tracking-tight text-gray-900">
+            Your paper has been submitted
+          </h1>
+          <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-gray-500">
+            {result.message || "Your college will announce the results."}
+          </p>
+        </div>
+        {result.submittedAt && (
+          <p className="text-xs text-gray-400">
+            Received at {new Date(result.submittedAt).toLocaleString()}
+          </p>
+        )}
+        <button
+          onClick={() => { clearStudentSession(); navigate("/verify"); }}
+          className="exam-action-primary mt-2 px-8 py-3"
+        >
+          Done
+        </button>
+      </div>
+    );
+  }
+
   if (error || !result) {
     return (
       <div className="flex h-screen flex-col items-center justify-center gap-4 p-6 text-center">
