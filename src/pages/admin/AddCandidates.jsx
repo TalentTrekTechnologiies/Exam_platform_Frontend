@@ -7,6 +7,7 @@ import {
 } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 import ExistingStudents from "../../components/Admin/ExistingStudents";
+import SittingRoster from "../../components/Admin/SittingRoster";
 
 /**
  * Getting candidates onto an exam.
@@ -499,6 +500,12 @@ const AddCandidates = () => {
               </Link>
             </div>
           )}
+        </div>
+      )}
+
+      {examId && (
+        <div className="mt-8">
+          <SittingRoster examId={examId} slots={slots} refreshKey={saved} />
         </div>
       )}
     </Layout>
