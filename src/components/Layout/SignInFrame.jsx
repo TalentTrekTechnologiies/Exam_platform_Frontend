@@ -76,7 +76,7 @@ export default function SignInFrame({ logo, title, tagline, notes, paused = fals
   const showAnimation = wantsMotion && !!SIGNIN_MEDIA.logoIntro;
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-50 lg:grid lg:grid-cols-[1fr_1.05fr]">
+    <div className="flex min-h-screen flex-col bg-white lg:grid lg:grid-cols-[1fr_1.05fr]">
 
       {/* ── The form ────────────────────────────────────────────────────── */}
       {/* Second on a narrow screen, so the college is what greets you; first
@@ -86,22 +86,36 @@ export default function SignInFrame({ logo, title, tagline, notes, paused = fals
       </main>
 
       {/* ── The college ─────────────────────────────────────────────────── */}
+      {/* Cream, which is the backdrop this crest was drawn for and what the
+          college's own site opens on. The animation carries an alpha channel,
+          so whatever sits behind it shows through — putting it on the colour it
+          was designed against is what makes it look like the college's mark
+          rather than a logo pasted onto a screen. */}
       <aside className="relative order-1 flex flex-col items-center justify-center overflow-hidden
-                        bg-chrome px-8 py-10 text-center text-white
-                        lg:order-2 lg:min-h-screen lg:px-14 lg:py-16">
+                        border-b border-black/5 bg-[#f4f3ef] px-8 py-10 text-center text-slate-900
+                        lg:order-2 lg:min-h-screen lg:border-b-0 lg:border-l lg:px-14 lg:py-16">
 
-        {/* Two soft washes rather than a flat fill, so the panel has depth
-            behind the crest instead of reading as a black rectangle. */}
+        {/* One very soft wash, so the panel has some depth without becoming a
+            second colour. Cream carries itself; anything stronger here fights
+            the crest. */}
         <div aria-hidden className="pointer-events-none absolute inset-0">
-          <div className="absolute -left-28 -top-24 h-80 w-80 rounded-full bg-primary-600/25 blur-3xl" />
-          <div className="absolute -bottom-32 -right-20 h-96 w-96 rounded-full bg-primary-500/15 blur-3xl" />
-          <div className="absolute inset-0 bg-[radial-gradient(80%_60%_at_50%_40%,rgba(255,255,255,0.06),transparent_70%)]" />
+          <div className="absolute -top-32 left-1/2 h-[28rem] w-[28rem] -translate-x-1/2 rounded-full
+                          bg-primary-600/[0.06] blur-3xl" />
         </div>
 
-        <div className="relative flex flex-col items-center">
+        {/* Name first, then the crest, then what the tool does — read top to
+            bottom it says whose exam this is, shows their mark, and explains
+            what the screen behind it will do. */}
+        <div className="relative flex w-full flex-col items-center lg:h-full lg:justify-between lg:py-2">
 
-          {/* ── The crest ─────────────────────────────────────────────── */}
-          <div className="relative h-28 w-28 sm:h-40 sm:w-40 lg:h-[15rem] lg:w-[15rem]">
+          {/* ── Whose exam this is ────────────────────────────────────── */}
+          <h1 className="max-w-md text-lg font-bold leading-snug tracking-tight text-chrome
+                         sm:text-2xl lg:text-[2rem] lg:leading-[1.2]">
+            {title}
+          </h1>
+
+          {/* ── Their mark, drawing itself ────────────────────────────── */}
+          <div className="relative my-6 h-28 w-28 sm:h-40 sm:w-40 lg:my-0 lg:h-[16rem] lg:w-[16rem]">
             {showAnimation && (
               <video
                 ref={videoRef}
@@ -115,7 +129,7 @@ export default function SignInFrame({ logo, title, tagline, notes, paused = fals
                 onPlaying={() => setPlaying(true)}
                 onError={() => setPlaying(false)}
                 className={`absolute inset-0 h-full w-full object-contain
-                            transition-opacity duration-500 ${playing ? "opacity-100" : "opacity-0"}`}
+                            transition-opacity duration-200 ${playing ? "opacity-100" : "opacity-0"}`}
               />
             )}
             <img
@@ -123,35 +137,32 @@ export default function SignInFrame({ logo, title, tagline, notes, paused = fals
               alt={title ? `${title} crest` : "College crest"}
               onError={(e) => { e.currentTarget.style.visibility = "hidden"; }}
               className={`absolute inset-0 h-full w-full object-contain
-                          transition-opacity duration-500 ${playing ? "opacity-0" : "opacity-100"}`}
+                          transition-opacity duration-200 ${playing ? "opacity-0" : "opacity-100"}`}
             />
           </div>
 
-          {/* ── Name ──────────────────────────────────────────────────── */}
-          <h1 className="mt-7 max-w-md text-lg font-bold leading-snug tracking-tight
-                         sm:text-2xl lg:mt-10 lg:text-[2rem] lg:leading-[1.2]">
-            {title}
-          </h1>
+          {/* ── What this screen leads to ─────────────────────────────── */}
+          <div className="flex flex-col items-center">
+            {tagline && (
+              <>
+                <span aria-hidden className="mb-6 hidden h-px w-16 bg-slate-300 sm:block" />
+                <p className="hidden max-w-sm text-sm leading-relaxed text-slate-600 sm:block lg:text-[0.95rem]">
+                  {tagline}
+                </p>
+              </>
+            )}
 
-          {tagline && (
-            <>
-              <span aria-hidden className="mt-5 hidden h-px w-16 bg-white/25 sm:block" />
-              <p className="mt-5 hidden max-w-sm text-sm leading-relaxed text-white/70 sm:block lg:text-[0.95rem]">
-                {tagline}
-              </p>
-            </>
-          )}
-
-          {notes?.length > 0 && (
-            <ul className="mt-9 hidden space-y-3 text-left lg:block">
-              {notes.map((note) => (
-                <li key={note} className="flex items-start gap-3 text-sm leading-relaxed text-white/65">
-                  <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary-400" />
-                  {note}
-                </li>
-              ))}
-            </ul>
-          )}
+            {notes?.length > 0 && (
+              <ul className="mt-7 hidden space-y-3 text-left lg:block">
+                {notes.map((note) => (
+                  <li key={note} className="flex items-start gap-3 text-sm leading-relaxed text-slate-600">
+                    <span className="mt-[0.45rem] h-1.5 w-1.5 shrink-0 rounded-full bg-primary-600" />
+                    {note}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         </div>
       </aside>
     </div>
