@@ -13,8 +13,9 @@ const StudentManagement = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [exporting, setExporting] = useState(false);
-  const [removing, setRemoving] = useState(null);
+  const [removing, setRemoving] = useState(false);
   const [confirming, setConfirming] = useState(null);
+  const [selected, setSelected] = useState(new Set());
 
   // 🚀 STEP 1 — ADD STATE (AUTO-FILL FROM LOCALSTORAGE)
   const [file, setFile] = useState(null);
@@ -110,17 +111,23 @@ const StudentManagement = () => {
    * They come off this list, off any exam they have not yet taken, and can no
    * longer sign in; Results shows exactly what it showed before.
    */
-  const removeStudent = async (student) => {
-    setRemoving(student.studentId);
+  const removeStudents = async (batch) => {
+    const ids = batch.map((s) => s.studentId);
+    setRemoving(true);
     try {
-      await api.del(`/admin/students/${student.studentId}`);
+      // One request whatever the size. Clearing a mistaken upload used to be a
+      // round trip per candidate, which for a full roster is the admin sitting
+      // watching a progress bar that need not exist.
+      await api.post("/admin/students/remove", { studentIds: ids });
+      const gone = new Set(ids);
+      setStudents((prev) => prev.filter((s) => !gone.has(s.studentId)));
+      setSelected(new Set());
       setConfirming(null);
       setError("");
-      setStudents((prev) => prev.filter((s) => s.studentId !== student.studentId));
     } catch (e) {
-      setError(e.message || "That candidate could not be removed.");
+      setError(e.message || "Those candidates could not be removed.");
     } finally {
-      setRemoving(null);
+      setRemoving(false);
     }
   };
 
@@ -137,6 +144,36 @@ const StudentManagement = () => {
 
     return matchesSearch && matchesStatus;
   });
+
+  /**
+   * Selection follows the filter, never the whole roll.
+   *
+   * "Select all" ticking rows that are scrolled out of sight behind a search is
+   * how someone means to clear twelve mistyped entries and clears the cohort.
+   * The header box covers exactly the rows on screen, and the count on the
+   * button says so.
+   */
+  const selectedStudents = filteredStudents.filter((s) => selected.has(s.studentId));
+  const allVisibleSelected = filteredStudents.length > 0
+    && selectedStudents.length === filteredStudents.length;
+
+  const toggleAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allVisibleSelected) filteredStudents.forEach((s) => next.delete(s.studentId));
+      else filteredStudents.forEach((s) => next.add(s.studentId));
+      return next;
+    });
+  };
+
+  const toggleOne = (studentId) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(studentId)) next.delete(studentId);
+      else next.add(studentId);
+      return next;
+    });
+  };
 
   const exportToCSV = async () => {
     setExporting(true);
@@ -263,6 +300,29 @@ const StudentManagement = () => {
           </div>
         </CardHeader>
         <CardBody>
+          {selectedStudents.length > 0 && (
+            <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3">
+              <span className="text-sm font-semibold text-indigo-900">
+                {selectedStudents.length} selected
+              </span>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSelected(new Set())}
+                  className="text-sm font-semibold text-indigo-700 hover:text-indigo-900"
+                >
+                  Clear
+                </button>
+                <button
+                  onClick={() => setConfirming(selectedStudents)}
+                  disabled={removing}
+                  className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
+                >
+                  <FiTrash2 /> Remove {selectedStudents.length}
+                </button>
+              </div>
+            </div>
+          )}
+
           {error && students.length > 0 && (
             <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-900">
               {error}
@@ -272,6 +332,15 @@ const StudentManagement = () => {
             <table className="w-full">
               <thead className="bg-gray-50">
                 <tr>
+                  <th className="w-10 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      checked={allVisibleSelected}
+                      onChange={toggleAllVisible}
+                      title="Select everything currently shown"
+                      className="h-4 w-4 cursor-pointer rounded border-gray-300"
+                    />
+                  </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Hall Ticket</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Exams</th>
@@ -281,7 +350,18 @@ const StudentManagement = () => {
               <tbody className="divide-y divide-gray-200">
                 {filteredStudents.length > 0 ? (
                   filteredStudents.map((student) => (
-                    <tr key={student.studentId} className="hover:bg-gray-50">
+                    <tr
+                      key={student.studentId}
+                      className={selected.has(student.studentId) ? "bg-indigo-50/60" : "hover:bg-gray-50"}
+                    >
+                      <td className="w-10 px-4 py-4">
+                        <input
+                          type="checkbox"
+                          checked={selected.has(student.studentId)}
+                          onChange={() => toggleOne(student.studentId)}
+                          className="h-4 w-4 cursor-pointer rounded border-gray-300"
+                        />
+                      </td>
                       <td className="px-6 py-4 text-sm font-medium text-gray-900">{student.hallTicket}</td>
                       <td className="px-6 py-4 text-sm text-gray-600">{student.name}</td>
                       <td className="px-6 py-4">
@@ -302,8 +382,8 @@ const StudentManagement = () => {
                       </td>
                       <td className="px-6 py-4 text-right">
                         <button
-                          onClick={() => setConfirming(student)}
-                          disabled={removing === student.studentId}
+                          onClick={() => setConfirming([student])}
+                          disabled={removing}
                           title="Take this candidate off the roll — their marks stay in Results"
                           className="rounded p-2 text-gray-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-40"
                         >
@@ -314,7 +394,7 @@ const StudentManagement = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                    <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                       {error || "No students found"}
                     </td>
                   </tr>
@@ -342,20 +422,34 @@ const StudentManagement = () => {
           >
             <div className="px-6 py-5">
               <h3 className="text-lg font-semibold text-gray-900">
-                Remove {confirming.name}?
+                {confirming.length === 1
+                  ? `Remove ${confirming[0].name}?`
+                  : `Remove ${confirming.length} candidates?`}
               </h3>
               <p className="mt-2 text-sm text-gray-600">
-                Hall ticket <span className="font-medium text-gray-900">{confirming.hallTicket}</span> comes
-                off your candidate list and off any exam they have not sat yet, and they can no
-                longer sign in.
+                {confirming.length === 1 ? (
+                  <>
+                    Hall ticket <span className="font-medium text-gray-900">{confirming[0].hallTicket}</span> comes
+                    off your candidate list
+                  </>
+                ) : (
+                  <>They come off your candidate list</>
+                )}{" "}
+                and off any exam they have not sat yet, and they can no longer sign in.
               </p>
               <p className="mt-3 rounded-lg bg-green-50 px-3 py-2 text-sm text-green-900">
-                Their marks stay in Results. Every exam they have already sat is left exactly as
-                it is.
+                Marks stay in Results. Every exam already sat is left exactly as it is.
               </p>
-              {examsOf(confirming).length > 0 && (
+              {/* Named in full up to a point a person can actually read. */}
+              {confirming.length > 1 && (
+                <p className="mt-3 max-h-24 overflow-y-auto text-xs text-gray-500">
+                  {confirming.slice(0, 20).map((s) => s.hallTicket).join(", ")}
+                  {confirming.length > 20 && ` and ${confirming.length - 20} more`}
+                </p>
+              )}
+              {confirming.length === 1 && examsOf(confirming[0]).length > 0 && (
                 <p className="mt-3 text-xs text-gray-500">
-                  Currently on: {examsOf(confirming).map((e) => e.examTitle || `Exam #${e.examId}`).join(", ")}
+                  Currently on: {examsOf(confirming[0]).map((e) => e.examTitle || `Exam #${e.examId}`).join(", ")}
                 </p>
               )}
             </div>
@@ -367,12 +461,14 @@ const StudentManagement = () => {
                 Cancel
               </button>
               <button
-                onClick={() => removeStudent(confirming)}
-                disabled={removing === confirming.studentId}
+                onClick={() => removeStudents(confirming)}
+                disabled={removing}
                 className="flex items-center gap-2 rounded-lg bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-50"
               >
                 <FiTrash2 />
-                {removing === confirming.studentId ? "Removing…" : "Remove candidate"}
+                {removing
+                  ? "Removing…"
+                  : confirming.length === 1 ? "Remove candidate" : `Remove ${confirming.length}`}
               </button>
             </div>
           </div>
