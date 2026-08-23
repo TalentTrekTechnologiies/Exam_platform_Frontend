@@ -12,7 +12,23 @@ const FLUSH_MS = 5000;
 const MARKED_KEY = (id) => `exam_marked_${id}`;
 const VISITED_KEY = (id) => `exam_visited_${id}`;
 const VIOLATIONS_KEY = (id) => `exam_violations_${id}`;
+const STRIKES_KEY = (id) => `exam_strikes_${id}`;
 const PENDING_KEY = (id) => `exam_pending_${id}`;
+
+/**
+ * The violations that are the candidate's own doing, and the only ones that
+ * count toward the three that end a paper.
+ *
+ * What the camera reports — a dark lens, a face out of frame, a second face —
+ * is recorded and shown to the invigilator, but is deliberately absent here.
+ * Face and brightness detection are probabilistic and fail for innocent
+ * reasons, so they must never close anybody's exam on their own. One shared
+ * counter made them do exactly that, in both directions: two dark frames left
+ * a candidate one tab-switch from auto-submit with no warning ever shown, and
+ * the flag count an invigilator read off the monitor had no relationship to
+ * the strikes actually being counted against the paper.
+ */
+const STRIKE_TYPES = new Set(["FULLSCREEN_EXIT", "TAB_SWITCH", "APP_SWITCH"]);
 
 /**
  * The five states every EAMCET / NEET / NQT candidate navigates by.
@@ -81,10 +97,18 @@ export const ExamProvider = ({ children }) => {
   const [status, setStatus] = useState("IDLE"); // IDLE | LOADING | READY | SUBMITTED | ERROR
   const [error, setError] = useState(null);
   const [syncState, setSyncState] = useState("synced"); // synced | pending | offline
+  // Every flag the invigilator sees, camera observations included.
   const [violations, setViolations] = useState(0);
+  // Rule violations only — this is what the three-strike rule counts.
+  const [strikes, setStrikes] = useState(0);
 
   // Answers that haven't reached the server yet: { [questionId]: option }
   const pending = useRef({});
+  // Read back synchronously the moment a violation is recorded, which a
+  // useState value cannot be: React is free to defer an updater until render,
+  // so a count read straight after setViolations could still be the old one.
+  const violationCount = useRef(0);
+  const strikeCount = useRef(0);
   const submitting = useRef(false);
   const onExpiry = useRef(null);
 
@@ -113,7 +137,10 @@ export const ExamProvider = ({ children }) => {
       const restoredVisited = readJson(VISITED_KEY(id), {});
       Object.keys(saved || {}).forEach((qid) => { restoredVisited[qid] = true; });
       setVisited(restoredVisited);
-      setViolations(readJson(VIOLATIONS_KEY(id), 0));
+      violationCount.current = readJson(VIOLATIONS_KEY(id), 0);
+      strikeCount.current = readJson(STRIKES_KEY(id), 0);
+      setViolations(violationCount.current);
+      setStrikes(strikeCount.current);
       pending.current = readJson(PENDING_KEY(id), {});
       setStatus(clock.expired ? "SUBMITTED" : "READY");
     } catch (e) {
@@ -228,16 +255,26 @@ export const ExamProvider = ({ children }) => {
    * evidence a candidate can erase.
    */
   const recordViolation = useCallback((type = "APP_SWITCH", detail = "") => {
-    let next = 0;
-    setViolations((prev) => {
-      next = prev + 1;
-      if (attemptId) localStorage.setItem(VIOLATIONS_KEY(attemptId), JSON.stringify(next));
-      return next;
-    });
+    const counted = STRIKE_TYPES.has(type);
 
-    // Fire and forget — never let logging block or fail the exam.
-    if (attemptId) examApi.reportViolation(Number(attemptId), type, next, detail);
-    return next;
+    violationCount.current += 1;
+    setViolations(violationCount.current);
+    if (counted) {
+      strikeCount.current += 1;
+      setStrikes(strikeCount.current);
+    }
+
+    if (attemptId) {
+      localStorage.setItem(VIOLATIONS_KEY(attemptId), JSON.stringify(violationCount.current));
+      if (counted) localStorage.setItem(STRIKES_KEY(attemptId), JSON.stringify(strikeCount.current));
+      // Fire and forget — never let logging block or fail the exam. Every
+      // flag is still reported; occurrence stays the running total so the
+      // audit trail numbers each event in the order it happened.
+      examApi.reportViolation(Number(attemptId), type, violationCount.current, detail);
+    }
+
+    // The strike count, because this is what decides whether the paper ends.
+    return strikeCount.current;
   }, [attemptId]);
 
   // ── Clock ─────────────────────────────────────────────────────────────────
@@ -289,6 +326,7 @@ export const ExamProvider = ({ children }) => {
       localStorage.removeItem(MARKED_KEY(attemptId));
       localStorage.removeItem(VISITED_KEY(attemptId));
       localStorage.removeItem(VIOLATIONS_KEY(attemptId));
+      localStorage.removeItem(STRIKES_KEY(attemptId));
       setStatus("SUBMITTED");
       return { ok: true };
     } catch (e) {
@@ -365,7 +403,7 @@ export const ExamProvider = ({ children }) => {
         attemptId, beginAttempt, loadAttempt,
         questions, answers, markedForReview, visited,
         remainingSeconds, status, error, syncState,
-        violations, recordViolation,
+        violations, strikes, recordViolation,
         saveAnswer, clearAnswer, toggleMarkForReview, markVisited,
         submitExam, setExpiryHandler,
         statusOf, sections, counts, answeredCount, unansweredCount,

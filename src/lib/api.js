@@ -128,7 +128,7 @@ export const clearStudentSession = () => {
     "student_examId", "student_slotId", "attemptId",
   ].forEach((k) => localStorage.removeItem(k));
 
-  // exam_pending_*, exam_marked_*, exam_visited_*, exam_violations_*
+  // exam_pending_*, exam_marked_*, exam_visited_*, exam_violations_*, exam_strikes_*
   Object.keys(localStorage)
     .filter((k) => k.startsWith("exam_"))
     .forEach((k) => localStorage.removeItem(k));

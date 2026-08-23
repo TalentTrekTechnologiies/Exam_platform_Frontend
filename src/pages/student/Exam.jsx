@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useExam } from "../../contexts/ExamContext";
 import { examApi, uploadUrl } from "../../lib/api";
 import { createFaceWatch } from "../../lib/faceWatch";
+import { createFrameSender } from "../../lib/proctorFrames";
 import Timer from "../../components/Exam/Timer";
 import QuestionPalette from "../../components/Exam/QuestionPalette";
 import QuestionPanel from "../../components/Exam/QuestionPanel";
@@ -77,20 +78,45 @@ const FullscreenGate = ({ onEnter, error }) => (
   </Curtain>
 );
 
-const ViolationCurtain = ({ count, max, onReEnter, onAutoSubmit }) => {
-  const final = count >= max;
-  const [countdown, setCountdown] = useState(10);
+/**
+ * The ten seconds between a candidate's last strike and their paper closing.
+ *
+ * `onDone` arrives as an inline arrow from the render below, so it is a new
+ * function on every render — and this page re-renders once a second, because
+ * the exam clock ticks once a second. With that callback in the effect's
+ * dependency list, every tick tore the countdown's interval down and started a
+ * fresh one, which the following tick tore down in turn. The interval rarely
+ * survived a full second, so the count sat at ten and the submit never came:
+ * candidates were held on "Auto-submitting in 10s" for the rest of the sitting
+ * while the invigilator's monitor still showed them writing, their flag count
+ * climbing with nothing ever closing the paper.
+ *
+ * The callback is held in a ref instead, so the interval depends only on
+ * whether the countdown is armed and, once started, runs to the end.
+ */
+const useAutoSubmitCountdown = (armed, onDone, seconds = 10) => {
+  const [countdown, setCountdown] = useState(seconds);
+  const done = useRef(onDone);
+  useEffect(() => { done.current = onDone; });
 
   useEffect(() => {
-    if (!final) return undefined;
+    if (!armed) return undefined;
+    setCountdown(seconds);
+    let left = seconds;
     const t = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) { clearInterval(t); onAutoSubmit(); return 0; }
-        return c - 1;
-      });
+      left -= 1;
+      setCountdown(left);
+      if (left <= 0) { clearInterval(t); done.current(); }
     }, 1000);
     return () => clearInterval(t);
-  }, [final, onAutoSubmit]);
+  }, [armed, seconds]);
+
+  return countdown;
+};
+
+const ViolationCurtain = ({ count, max, onReEnter, onAutoSubmit }) => {
+  const final = count >= max;
+  const countdown = useAutoSubmitCountdown(final, onAutoSubmit);
 
   return (
     <Curtain
@@ -111,18 +137,7 @@ const ViolationCurtain = ({ count, max, onReEnter, onAutoSubmit }) => {
 
 const WarningDialog = ({ count, max, reason, onDismiss, onAutoSubmit }) => {
   const final = count >= max;
-  const [countdown, setCountdown] = useState(10);
-
-  useEffect(() => {
-    if (!final) return undefined;
-    const t = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) { clearInterval(t); onAutoSubmit(); return 0; }
-        return c - 1;
-      });
-    }, 1000);
-    return () => clearInterval(t);
-  }, [final, onAutoSubmit]);
+  const countdown = useAutoSubmitCountdown(final, onAutoSubmit);
 
   return (
     <div className="fixed inset-0 z-[9998] flex items-center justify-center bg-chrome/70 p-6 backdrop-blur-sm">
@@ -157,7 +172,7 @@ const Exam = () => {
   const navigate = useNavigate();
   const {
     attemptId, questions, answers, remainingSeconds, status, error, syncState,
-    violations, recordViolation, saveAnswer, clearAnswer, toggleMarkForReview,
+    strikes, recordViolation, saveAnswer, clearAnswer, toggleMarkForReview,
     markVisited, submitExam, setExpiryHandler,
     statusOf, sections, counts, markedForReview,
   } = useExam();
@@ -180,9 +195,16 @@ const Exam = () => {
   const fullscreenUnavailable = useRef(false);
   const outsideFullscreen = useRef(false);
   const mediaStream = useRef(null);
-  const videoRef = useRef(null);
   const frameSender = useRef(null);
   const faceWatch = useRef(null);
+
+  // A callback ref rather than useRef, because the self-view mounts long after
+  // the camera is asked for and a plain ref cannot say when. Held in state so
+  // that arrival re-runs the effect that attaches the picture. `setVideoEl`
+  // comes from useState and so is stable — an inline arrow here would be a new
+  // ref callback every render, detaching and reattaching the stream each time.
+  const [videoEl, setVideoEl] = useState(null);
+  const [stream, setStream] = useState(null);
 
   const candidateName = localStorage.getItem("studentName") || "Candidate";
   const hallTicket = localStorage.getItem("hallTicket") || "";
@@ -210,51 +232,106 @@ const Exam = () => {
   }, []);
 
   // ── Camera / mic ─────────────────────────────────────────────────────────
+
+  /**
+   * Getting hold of the camera, which is not the same moment as showing it.
+   *
+   * Permission is asked for as soon as the exam details load — while the
+   * candidate is still on the fullscreen gate, which returns early, so the
+   * paper and the self-view in its right rail do not exist yet. The stream was
+   * attached inside this promise behind `if (videoRef.current)`, and on a
+   * machine that remembers the permission getUserMedia resolves in
+   * milliseconds, long before anybody clicks Enter. The ref was null, the
+   * guard skipped the lot without a word, and the effect never ran again: the
+   * candidate sat the whole paper looking at an empty black box. The same
+   * block also started the face watch and the frames the invigilator watches,
+   * so neither of those ever ran either.
+   *
+   * So this only acquires. Attaching is the effect below, which waits for both
+   * halves and does not care which arrives first.
+   */
   useEffect(() => {
     if (!examInfo || (!examInfo.enableCamera && !examInfo.enableMic)) return undefined;
     let cancelled = false;
 
     navigator.mediaDevices
       .getUserMedia({ video: !!examInfo.enableCamera, audio: !!examInfo.enableMic })
-      .then((stream) => {
-        if (cancelled) { stream.getTracks().forEach((t) => t.stop()); return; }
-        mediaStream.current = stream;
-        if (videoRef.current && examInfo.enableCamera) {
-          videoRef.current.srcObject = stream;
-
-          // Observation only. This records what the camera sees for an
-          // invigilator to review; it can never end the candidate's exam.
-          faceWatch.current = createFaceWatch({
-            videoEl: videoRef.current,
-            attemptId,
-            onStatus: (s) => setCameraStatus(s.state),
-          });
-          faceWatch.current.start();
-
-          // The invigilator's view of this seat. Independent of faceWatch:
-          // one decides whether to raise a flag, the other simply shows a
-          // person what the camera sees.
-          frameSender.current = createFrameSender({
-            videoEl: videoRef.current,
-            attemptId,
-            // A camera that is covered or unlit is logged for the invigilator.
-            // Not a strike: a weak bulb is not cheating, and this must never
-            // end anybody's exam by itself.
-            onObservation: (type, detail) => recordViolation(type, detail),
-          });
-          frameSender.current.start();
-        }
+      .then((s) => {
+        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
+        mediaStream.current = s;
+        setStream(s);
       })
+      // Only a refused or absent camera reaches here now, which is the one
+      // thing /blocked is meant to explain.
       .catch(() => { if (!cancelled) navigate("/blocked", { replace: true }); });
 
     return () => {
       cancelled = true;
-      faceWatch.current?.stop();
-      faceWatch.current = null;
       mediaStream.current?.getTracks().forEach((t) => t.stop());
       mediaStream.current = null;
+      setStream(null);
     };
   }, [examInfo, navigate]);
+
+  /**
+   * Shows the candidate their own camera, and starts the two watchers that
+   * read from it.
+   *
+   * Runs when the stream and the <video> are both present, in whichever order
+   * that happens — the candidate granting the camera before entering
+   * fullscreen, or after. It runs again if the paper is unmounted and comes
+   * back, which is what a fullscreen violation curtain does.
+   */
+  useEffect(() => {
+    if (!stream || !videoEl || !examInfo?.enableCamera) return undefined;
+
+    videoEl.srcObject = stream;
+    // Muted autoplay is permitted everywhere, but Safari still wants asking,
+    // and a rejected play() must not become an unhandled rejection.
+    Promise.resolve(videoEl.play?.()).catch(() => {});
+
+    let watch = null;
+    let sender = null;
+    try {
+      // Observation only. This records what the camera sees for an
+      // invigilator to review; it can never end the candidate's exam.
+      watch = createFaceWatch({
+        videoEl,
+        attemptId,
+        onStatus: (s) => setCameraStatus(s.state),
+      });
+      watch.start();
+
+      // The invigilator's view of this seat. Independent of faceWatch:
+      // one decides whether to raise a flag, the other simply shows a
+      // person what the camera sees.
+      sender = createFrameSender({
+        videoEl,
+        attemptId,
+        // A camera that is covered or unlit is logged for the invigilator.
+        // Not a strike: a weak bulb is not cheating, and this must never
+        // end anybody's exam by itself.
+        onObservation: (type, detail) => recordViolation(type, detail),
+      });
+      sender.start();
+    } catch {
+      // Invigilation is subordinate to the exam. If a watcher cannot start,
+      // the candidate still has their paper and still has their self-view.
+    }
+
+    faceWatch.current = watch;
+    frameSender.current = sender;
+
+    return () => {
+      // The frame sender used to be left running: its interval outlived the
+      // page and went on capturing from a video that was no longer there.
+      watch?.stop();
+      sender?.stop();
+      faceWatch.current = null;
+      frameSender.current = null;
+      if (videoEl.srcObject === stream) videoEl.srcObject = null;
+    };
+  }, [stream, videoEl, examInfo, attemptId, recordViolation]);
 
   // ── Navigation ───────────────────────────────────────────────────────────
   const goTo = useCallback((index) => {
@@ -535,7 +612,7 @@ const Exam = () => {
   if (blocked) {
     return (
       <ViolationCurtain
-        count={violations}
+        count={strikes}
         max={MAX_WARNINGS}
         onReEnter={enterFullscreen}
         onAutoSubmit={() => handleSubmit("auto-submit: repeated fullscreen violations")}
@@ -722,7 +799,7 @@ const Exam = () => {
               <div className="relative overflow-hidden rounded-exam bg-chrome">
                 <video
                   data-camera-status={cameraStatus || "off"}
-                  ref={videoRef}
+                  ref={setVideoEl}
                   autoPlay muted playsInline
                   className="aspect-[4/3] w-full object-cover"
                 />
