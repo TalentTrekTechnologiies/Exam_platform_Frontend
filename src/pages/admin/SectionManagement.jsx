@@ -11,7 +11,9 @@ const SectionManagement = () => {
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name: "", totalMarks: "" });
+  const [form, setForm] = useState({ name: "", totalMarks: "", questionsToDraw: "" });
+  // How many questions each section actually holds, so "20 of 70" means something.
+  const [bankBySection, setBankBySection] = useState({});
 
   const examId = localStorage.getItem("examId");
 
@@ -34,6 +36,20 @@ const SectionManagement = () => {
         const data = await res.json();
         setSections(data);
       }
+
+      // The size of each section's bank. Without it "draw 20" is a number with
+      // nothing to measure itself against, and there is no way to see that a
+      // section is asking for more questions than it has.
+      const qres = await fetch(`${API_URL}/admin/question/${examId}`);
+      if (qres.ok) {
+        const qs = await qres.json();
+        const counts = {};
+        (Array.isArray(qs) ? qs : []).forEach((q) => {
+          const key = q.sectionId ?? "none";
+          counts[key] = (counts[key] || 0) + 1;
+        });
+        setBankBySection(counts);
+      }
     } catch (err) {
       console.error("Failed to fetch sections:", err);
     } finally {
@@ -48,6 +64,9 @@ const SectionManagement = () => {
     const payload = {
       name: form.name,
       totalMarks: parseInt(form.totalMarks) || 0,
+      // Blank means every question in the section, which is what an exam that
+      // has never heard of drawing already does.
+      questionsToDraw: form.questionsToDraw === "" ? null : parseInt(form.questionsToDraw) || null,
       examId: parseInt(examId)
     };
 
@@ -65,7 +84,7 @@ const SectionManagement = () => {
       });
 
       if (res.ok) {
-        setForm({ name: "", totalMarks: "" });
+        setForm({ name: "", totalMarks: "", questionsToDraw: "" });
         setEditingId(null);
         fetchSections();
       }
@@ -76,7 +95,11 @@ const SectionManagement = () => {
 
   const handleEdit = (section) => {
     setEditingId(section.id);
-    setForm({ name: section.name, totalMarks: section.totalMarks || "" });
+    setForm({
+      name: section.name,
+      totalMarks: section.totalMarks || "",
+      questionsToDraw: section.questionsToDraw ?? "",
+    });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -123,6 +146,23 @@ const SectionManagement = () => {
                 onChange={(e) => setForm({ ...form, totalMarks: e.target.value })}
               />
             </div>
+            <div className="md:col-span-1">
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
+                Questions Per Paper
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="All"
+                className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all text-gray-700 font-medium"
+                value={form.questionsToDraw}
+                onChange={(e) => setForm({ ...form, questionsToDraw: e.target.value })}
+              />
+              <p className="mt-2 ml-1 text-xs text-gray-400">
+                Leave blank for every question. Set it lower and each candidate draws
+                that many at random from this section.
+              </p>
+            </div>
             <button
               type="submit"
               className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg ${
@@ -165,6 +205,22 @@ const SectionManagement = () => {
                     <p className="text-sm text-gray-400 font-medium flex items-center gap-1">
                       Target Score: <span className="text-indigo-500">{s.totalMarks || 0} Marks</span>
                     </p>
+                    {(() => {
+                      const bank = bankBySection[s.id] || 0;
+                      const draw = s.questionsToDraw;
+                      if (!draw || draw >= bank) {
+                        return (
+                          <p className="text-sm text-gray-400 font-medium">
+                            All {bank} question{bank === 1 ? "" : "s"} on every paper
+                          </p>
+                        );
+                      }
+                      return (
+                        <p className="text-sm font-semibold text-emerald-600">
+                          Draws {draw} of {bank} per candidate
+                        </p>
+                      );
+                    })()}
                   </div>
                 </div>
 

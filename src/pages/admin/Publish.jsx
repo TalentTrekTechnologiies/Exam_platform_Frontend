@@ -175,15 +175,20 @@ const Publish = () => {
 
           <div className="mb-5 grid grid-cols-2 gap-px overflow-hidden rounded-exam border border-gray-200 bg-gray-200 lg:grid-cols-5">
             {[
-              ["Questions", status.questionCount],
-              ["Sections", status.sectionCount],
-              ["Total marks", status.totalMarks],
-              ["Candidates", status.candidateCount],
-              ["Papers ready", status.preparedPapers],
-            ].map(([label, value]) => (
+              // Counts describe the paper a candidate sits. Where questions are
+              // drawn from a larger bank, the bank is named underneath rather
+              // than left to look like questions that went missing.
+              ["Questions", status.questionCount,
+                status.questionBank > 0 ? `drawn from ${status.questionBank}` : null],
+              ["Sections", status.sectionCount, null],
+              ["Total marks", status.totalMarks, null],
+              ["Candidates", status.candidateCount, null],
+              ["Papers ready", status.preparedPapers, null],
+            ].map(([label, value, hint]) => (
               <div key={label} className="bg-white px-5 py-4">
                 <p className="exam-label">{label}</p>
                 <p className="mt-1 text-xl font-semibold tabular text-gray-900">{value}</p>
+                {hint && <p className="mt-0.5 text-xs text-gray-500">{hint}</p>}
               </div>
             ))}
           </div>
