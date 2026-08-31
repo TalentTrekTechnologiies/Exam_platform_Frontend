@@ -280,8 +280,15 @@ export function installAuthFetch() {
 export const examApi = {
   // The institution scopes the lookup, so identical roll numbers at different
   // colleges resolve to the right candidate.
-  validate: (hallTicket, name) =>
-    api.post("/student/validate", { hallTicket, name, institutionCode: INSTITUTION_CODE }),
+  // examId disambiguates when a candidate has more than one sitting open at
+  // once; omitted on the first call, supplied after they have chosen.
+  validate: (hallTicket, name, examId) =>
+    api.post("/student/validate", {
+      hallTicket,
+      name,
+      institutionCode: INSTITUTION_CODE,
+      ...(examId ? { examId: String(examId) } : {}),
+    }),
   /** Public branding for the sign-in page, before anyone has authenticated. */
   institution: (code) => api.get(`/public/institution/${encodeURIComponent(code)}`),
   start: (studentId, examId) => api.post("/student/start", { studentId, examId }),

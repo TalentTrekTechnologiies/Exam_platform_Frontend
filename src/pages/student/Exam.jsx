@@ -272,16 +272,47 @@ const Exam = () => {
     if (!examInfo || (!examInfo.enableCamera && !examInfo.enableMic)) return undefined;
     let cancelled = false;
 
-    navigator.mediaDevices
-      .getUserMedia({ video: !!examInfo.enableCamera, audio: !!examInfo.enableMic })
-      .then((s) => {
-        if (cancelled) { s.getTracks().forEach((t) => t.stop()); return; }
-        mediaStream.current = s;
-        setStream(s);
-      })
-      // Only a refused or absent camera reaches here now, which is the one
-      // thing /blocked is meant to explain.
-      .catch(() => { if (!cancelled) navigate("/blocked", { replace: true }); });
+    /*
+     * The microphone must never cost a candidate their exam.
+     *
+     * Asking for camera and microphone in one call means one promise: a
+     * candidate with no microphone, or a driver that says no, was refused BOTH
+     * and sent to /blocked -- locked out of a paper they were entitled to sit,
+     * over a device nothing in the platform listens to. So the camera is asked
+     * for on its own, and the microphone is a second, optional request whose
+     * failure is ignored.
+     */
+    const wantCamera = !!examInfo.enableCamera;
+    const wantMic = !!examInfo.enableMic;
+
+    (async () => {
+      let media = null;
+
+      if (wantCamera) {
+        try {
+          media = await navigator.mediaDevices.getUserMedia({ video: true });
+        } catch {
+          // A refused or absent camera is the one thing /blocked explains.
+          if (!cancelled) navigate("/blocked", { replace: true });
+          return;
+        }
+      }
+
+      if (wantMic) {
+        try {
+          const audio = await navigator.mediaDevices.getUserMedia({ audio: true });
+          if (media) audio.getAudioTracks().forEach((t) => media.addTrack(t));
+          else media = audio;
+        } catch {
+          // No microphone, or permission declined. The paper carries on.
+        }
+      }
+
+      if (!media) return;
+      if (cancelled) { media.getTracks().forEach((t) => t.stop()); return; }
+      mediaStream.current = media;
+      setStream(media);
+    })();
 
     return () => {
       cancelled = true;

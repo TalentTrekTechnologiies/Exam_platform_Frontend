@@ -227,7 +227,7 @@ const Settings = () => {
                   <Toggle
                     icon={FiVideo}
                     label="Enable camera"
-                    hint="The candidate sees themselves, and the invigilator gets a picture of their seat every few seconds."
+                    hint="The candidate sees themselves, and the invigilator gets a picture of their seat every few seconds. A covered or unlit camera is flagged. Detecting a second face needs browser support that desktop Chrome, Edge, Firefox and Safari do not ship, so treat the pictures as what you invigilate from."
                     checked={!!exam.enableCamera}
                     disabled={proctorSaving}
                     onChange={(v) => setProctoring({ enableCamera: v })}

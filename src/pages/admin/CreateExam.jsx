@@ -302,7 +302,12 @@ export default function CreateExam() {
               </label>
 
               <label className="flex-1 flex items-center justify-between p-3 bg-gray-50 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors">
-                <span className="font-medium text-gray-700">Enable Microphone</span>
+                <span className="font-medium text-gray-700">
+                  Enable Microphone
+                  <span className="mt-0.5 block text-xs font-normal text-gray-400">
+                    Prompts candidates for the microphone. Nothing listens to it yet.
+                  </span>
+                </span>
                 <input
                   type="checkbox"
                   className="w-5 h-5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
