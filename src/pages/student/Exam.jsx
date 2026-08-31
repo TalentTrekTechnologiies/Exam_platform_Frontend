@@ -203,6 +203,16 @@ const Exam = () => {
   const [submitting, setSubmitting] = useState(false);
   const [cameraStatus, setCameraStatus] = useState(null);
 
+  /**
+   * The code a candidate has submitted, per question, for this page's lifetime.
+   *
+   * The server holds the authoritative copy — it was stored when they pressed
+   * Submit — but the paper does not re-fetch it when they navigate back, and
+   * finding an empty editor where your solution was is indistinguishable from
+   * having lost it.
+   */
+  const [codeByQuestion, setCodeByQuestion] = useState({});
+
   const started = useRef(false);
   const submittingRef = useRef(false);
   const reEntering = useRef(false);
@@ -612,6 +622,19 @@ const Exam = () => {
       ]);
 
       const bare = !e.ctrlKey && !e.metaKey && !e.altKey;
+
+      /*
+       * The one place typing is allowed.
+       *
+       * The allowlist above is right for a multiple-choice paper and fatal for
+       * a coding round: it blocks every letter, so a candidate could not write
+       * a single character of their solution. Inside the editor the keyboard
+       * behaves like a keyboard -- including the clipboard, because a coding
+       * round where you cannot copy your own line is a worse exam, and leaving
+       * the window to fetch a solution is already a strike.
+       */
+      if (e.target?.closest?.("[data-code-editor]")) return;
+
       if (!bare || !ALLOWED.has(key)) e.preventDefault();
 
       if (showSummary) return;
@@ -627,7 +650,13 @@ const Exam = () => {
 
     // Capture, so a handler on the question itself cannot swallow the event
     // before this one is reached.
-    const prevent = (e) => { if (started.current && status === "READY") e.preventDefault(); };
+    const prevent = (e) => {
+      if (!started.current || status !== "READY") return;
+      // Selecting your own code, and right-clicking in it, are ordinary
+      // editing. The paper outside the editor stays unselectable.
+      if (e.target?.closest?.("[data-code-editor]")) return;
+      e.preventDefault();
+    };
     const events = [
       "contextmenu", "copy", "cut", "paste",
       // Selecting the text and dragging it into another window copies it
@@ -824,6 +853,10 @@ const Exam = () => {
               currentAnswer={answers[currentQuestion?.id]}
               onAnswer={(option) => saveAnswer(currentQuestion.id, option)}
               disabled={status !== "READY"}
+              attemptId={attemptId}
+              savedCode={codeByQuestion[currentQuestion?.id]}
+              onCodeSaved={(saved) =>
+                setCodeByQuestion((prev) => ({ ...prev, [currentQuestion.id]: saved }))}
             />
           </div>
 

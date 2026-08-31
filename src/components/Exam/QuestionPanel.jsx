@@ -1,5 +1,6 @@
 import React from "react";
 import { uploadUrl } from "../../lib/api";
+import CodingPanel from "./CodingPanel";
 
 /**
  * A single question.
@@ -10,8 +11,25 @@ import { uploadUrl } from "../../lib/api";
  */
 const LETTERS = ["A", "B", "C", "D"];
 
-const QuestionPanel = ({ question, currentAnswer, onAnswer, disabled }) => {
+const QuestionPanel = ({
+  question, currentAnswer, onAnswer, disabled,
+  attemptId, savedCode, onCodeSaved,
+}) => {
   if (!question) return null;
+
+  // A coding question has no options to choose between; it is a different
+  // screen entirely, sharing only the header and the statement.
+  if (question.type === "CODING") {
+    return (
+      <CodingPanel
+        question={question}
+        attemptId={attemptId}
+        savedCode={savedCode}
+        onSaved={onCodeSaved}
+        disabled={disabled}
+      />
+    );
+  }
 
   const questionImage = uploadUrl(question.questionImage);
 

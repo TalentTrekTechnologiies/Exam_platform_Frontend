@@ -307,4 +307,17 @@ export const examApi = {
     api.post("/student/violation", { attemptId, type, occurrence, detail }).catch(() => null),
   result: (attemptId) => api.get(`/student/result/${attemptId}`),
   examInfo: (examId) => api.get(`/student/exam-info/${examId}`),
+
+  // ── Coding questions ──────────────────────────────────────────────────────
+  //
+  // Running is not submitting. `run` executes against the visible sample cases
+  // only and returns no marks; `submit` marks against every case, including the
+  // hidden ones, and stores the code. Judging at submit rather than at the
+  // final whistle is what stops five thousand programs being compiled in the
+  // same minute.
+  runCode: (attemptId, questionId, language, sourceCode) =>
+    api.post("/student/code/run", { attemptId, questionId, language, sourceCode }),
+  submitCode: (attemptId, questionId, language, sourceCode) =>
+    api.post("/student/code/submit", { attemptId, questionId, language, sourceCode }),
+  codeLanguages: (questionId) => api.get(`/student/code/languages/${questionId}`),
 };
