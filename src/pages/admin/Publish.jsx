@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
-import { FiCheckCircle, FiAlertTriangle, FiCopy, FiLink, FiLock, FiUnlock } from "react-icons/fi";
+import { FiCheckCircle, FiAlertTriangle, FiCopy, FiLink, FiLock, FiUnlock, FiFileText } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
@@ -13,11 +13,17 @@ import ExamPicker from "../../components/Admin/ExamPicker";
  * officer hands out.
  */
 const Publish = () => {
-  const examId = localStorage.getItem("examId");
+  // Publishing is the one irreversible-feeling act in the console, and the
+  // screen never said which exam it was about to open. With two being built
+  // at once that is a paper released before it is finished.
+  const [examId, setExamId] = useState(() => localStorage.getItem("examId") || "");
+  const [exams, setExams] = useState([]);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
+  const [preparing, setPreparing] = useState(false);
+  const [prepareResult, setPrepareResult] = useState("");
 
   const load = useCallback(async () => {
     if (!examId) return;
@@ -30,6 +36,44 @@ const Publish = () => {
   }, [examId]);
 
   useEffect(() => { load(); }, [load]);
+
+  useEffect(() => {
+    api.get("/admin/exam")
+      .then((list) => setExams(Array.isArray(list) ? list : []))
+      .catch(() => setExams([]));
+  }, []);
+
+  const switchExam = (id) => {
+    if (!id || id === examId) return;
+    localStorage.setItem("examId", id);
+    setExamId(id);
+    setStatus(null);
+    setError("");
+    setPrepareResult("");
+  };
+
+  /**
+   * The action the readiness warning asks for, on the screen that asks for it.
+   *
+   * The warning said "Run Prepare Papers" and there was no way to do so from
+   * here — it lives on the live monitor, which is not where anybody is
+   * standing the night before an exam.
+   */
+  const preparePapers = async () => {
+    if (preparing) return;
+    setPreparing(true);
+    setPrepareResult("");
+    setError("");
+    try {
+      const r = await api.post(`/admin/exam/${examId}/prepare`, {});
+      setPrepareResult(r.summary || "Papers prepared.");
+      load();
+    } catch (e) {
+      setError(e.message || "Could not prepare papers.");
+    } finally {
+      setPreparing(false);
+    }
+  };
 
   const act = async (path) => {
     setBusy(true); setError("");
@@ -64,6 +108,32 @@ const Publish = () => {
 
   return (
     <Layout title="Publish Exam" subtitle="Open this exam to candidates and share the link">
+      <div className="mb-5 min-w-0">
+        <p className="exam-label mb-1">You are publishing</p>
+        {exams.length > 1 ? (
+          <select
+            value={examId}
+            onChange={(e) => switchExam(e.target.value)}
+            aria-label="Which exam to publish"
+            className="max-w-full rounded-exam border border-gray-300 bg-white px-3 py-2 text-lg font-semibold
+                       text-gray-900 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-600/20"
+          >
+            {!exams.some((e) => String(e.id) === String(examId)) && (
+              <option value={examId}>{`Exam #${examId}`}</option>
+            )}
+            {exams.map((e) => (
+              <option key={e.id} value={String(e.id)}>
+                {e.title || `Exam #${e.id}`}{e.published ? " — published" : ""}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <h2 className="text-lg font-semibold text-gray-900">
+            {exams.find((e) => String(e.id) === String(examId))?.title || `Exam #${examId}`}
+          </h2>
+        )}
+      </div>
+
       {error && (
         <div className="mb-4 flex items-start gap-2 rounded-exam border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
           <FiAlertTriangle className="mt-0.5 shrink-0" /> {error}
@@ -135,6 +205,28 @@ const Publish = () => {
               <ul className="space-y-1 text-sm text-amber-900">
                 {status.warnings.map((w) => <li key={w}>· {w}</li>)}
               </ul>
+
+              {status.candidateCount > 0 && status.preparedPapers < status.candidateCount && (
+                <div className="mt-4 flex flex-wrap items-center gap-3 border-t border-amber-200 pt-4">
+                  <button
+                    onClick={preparePapers}
+                    disabled={preparing}
+                    className="exam-action-primary flex items-center gap-2"
+                  >
+                    <FiFileText />
+                    {preparing ? "Preparing…" : "Prepare papers now"}
+                  </button>
+                  <span className="text-xs text-amber-900">
+                    Safe to re-run — papers already built are left alone, so late enrolments just get added.
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+
+          {prepareResult && (
+            <div className="mb-4 rounded-exam border border-gray-200 bg-white px-5 py-4 text-sm text-gray-700">
+              {prepareResult}
             </div>
           )}
 
