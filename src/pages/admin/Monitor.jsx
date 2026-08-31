@@ -39,7 +39,10 @@ const ago = (iso) => {
 };
 
 const Monitor = () => {
-  const examId = localStorage.getItem("examId");
+  // State, not a one-off read: two sittings can be running at once and an
+  // invigilator needs to move between them without leaving the screen.
+  const [examId, setExamId] = useState(() => localStorage.getItem("examId") || "");
+  const [exams, setExams] = useState([]);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("ALL");
@@ -62,6 +65,32 @@ const Monitor = () => {
   }, [examId]);
 
   useEffect(() => { load(); }, [load]);
+
+  // The roll of exams to switch between, fetched once.
+  useEffect(() => {
+    api.get("/admin/exam")
+      .then((list) => setExams(Array.isArray(list) ? list : []))
+      .catch(() => setExams([]));
+  }, []);
+
+  /**
+   * Moves the monitor to another sitting.
+   *
+   * The choice is written to local storage because the rest of the console
+   * works on "the exam you are currently on" and should follow. The previous
+   * exam's roll is cleared first: leaving it on screen under the new title
+   * shows one sitting's candidates labelled as another's, which during live
+   * invigilation is worse than showing nothing for a second.
+   */
+  const switchExam = (id) => {
+    if (!id || id === examId) return;
+    localStorage.setItem("examId", id);
+    setExamId(id);
+    setData(null);
+    setFilter("ALL");
+    setPrepareResult("");
+    setError("");
+  };
 
   /**
    * Builds every candidate's paper ahead of the sitting.
@@ -119,9 +148,30 @@ const Monitor = () => {
   return (
     <Layout title="Live Monitor" subtitle="Watch the sitting as it happens">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-gray-900">{data?.examTitle || "Exam"}</h2>
-          <p className="text-sm text-gray-500">
+        <div className="min-w-0">
+          {exams.length > 1 ? (
+            <select
+              value={examId}
+              onChange={(e) => switchExam(e.target.value)}
+              aria-label="Which sitting to watch"
+              className="max-w-full rounded-exam border border-gray-300 bg-white px-3 py-2 text-lg font-semibold
+                         text-gray-900 focus:border-primary-600 focus:outline-none focus:ring-2 focus:ring-primary-600/20"
+            >
+              {/* An exam that has since been deleted would otherwise leave the
+                  box blank and the title a lie about what is on screen. */}
+              {!exams.some((e) => String(e.id) === String(examId)) && (
+                <option value={examId}>{data?.examTitle || `Exam #${examId}`}</option>
+              )}
+              {exams.map((e) => (
+                <option key={e.id} value={String(e.id)}>
+                  {e.title || `Exam #${e.id}`}{e.published ? "" : " — not published"}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <h2 className="text-lg font-semibold text-gray-900">{data?.examTitle || "Exam"}</h2>
+          )}
+          <p className="mt-1 text-sm text-gray-500">
             {data?.total ?? 0} candidates
             {lastRefresh && <> · updated {lastRefresh.toLocaleTimeString()}</>}
           </p>
