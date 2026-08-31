@@ -330,6 +330,17 @@ const Monitor = () => {
                   <td className="px-5 py-3 text-right tabular text-gray-700">{c.answered}</td>
                   <td className={`px-5 py-3 text-right tabular ${lowTime ? "font-semibold text-status-unanswered" : "text-gray-700"}`}>
                     {c.state === "SUBMITTED" ? "—" : clock(c.remainingSeconds)}
+                    {/* Time returned after a disconnection. Shown because an
+                        invigilator asked why one candidate is still writing
+                        after everybody else has finished deserves an answer. */}
+                    {c.extendedSeconds > 0 && (
+                      <span
+                        className="ml-2 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-800"
+                        title={`${Math.round(c.extendedSeconds / 60)} min returned after a disconnection`}
+                      >
+                        +{Math.round(c.extendedSeconds / 60)}m
+                      </span>
+                    )}
                   </td>
                   <td className="px-5 py-3 text-right text-xs text-gray-500">{ago(c.lastSeen || c.startedAt)}</td>
                   <td className="px-5 py-3 text-right">
