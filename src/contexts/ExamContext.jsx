@@ -254,8 +254,11 @@ export const ExamProvider = ({ children }) => {
    * server so an invigilator has an auditable record — local storage alone is
    * evidence a candidate can erase.
    */
-  const recordViolation = useCallback((type = "APP_SWITCH", detail = "") => {
-    const counted = STRIKE_TYPES.has(type);
+  const recordViolation = useCallback((type = "APP_SWITCH", detail = "", countAsStrike = true) => {
+    // The caller can decline the strike while still logging the event — how a
+    // single departure reported by three different browser events costs one
+    // warning rather than three.
+    const counted = countAsStrike && STRIKE_TYPES.has(type);
 
     violationCount.current += 1;
     setViolations(violationCount.current);

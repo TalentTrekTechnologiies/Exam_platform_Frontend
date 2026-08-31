@@ -13,6 +13,20 @@ import { FiAlertCircle, FiMaximize, FiWifiOff, FiGrid, FiX } from "react-icons/f
 const MAX_WARNINGS = 3;
 
 /**
+ * How long after a counted strike further departures are treated as the same
+ * one.
+ *
+ * A single press of Escape is not a single event. It leaves fullscreen, which
+ * raises fullscreenchange; several browsers raise a window blur alongside it,
+ * and a visibilitychange behind that. Counted separately, one key press was
+ * three strikes and the paper closed on a candidate's first mistake rather
+ * than their third — exactly the accident the three-warning rule exists to
+ * forgive. Every event is still logged for the invigilator; only the strike
+ * is debounced.
+ */
+const STRIKE_WINDOW_MS = 3000;
+
+/**
  * Fullscreen, asked of the document rather than assumed.
  *
  * Every browser answers one of these; a build that only checks the unprefixed
@@ -194,6 +208,10 @@ const Exam = () => {
   const reEntering = useRef(false);
   const fullscreenUnavailable = useRef(false);
   const outsideFullscreen = useRef(false);
+  const lastStrikeAt = useRef(0);
+  // Mirrors `blocked` for the callbacks below, which are built once and would
+  // otherwise close over a stale value.
+  const blockedRef = useRef(false);
   const mediaStream = useRef(null);
   const frameSender = useRef(null);
   const faceWatch = useRef(null);
@@ -412,6 +430,7 @@ const Exam = () => {
 
         outsideFullscreen.current = false;
         setIsFullscreen(true);
+        blockedRef.current = false;
         setBlocked(false);
         setFsError("");
         started.current = true;
@@ -426,10 +445,29 @@ const Exam = () => {
 
   const flagViolation = useCallback((reason, kind = "dialog", type = "APP_SWITCH") => {
     if (!started.current || submittingRef.current || reEntering.current || status !== "READY") return;
+
+    /*
+     * One departure is one strike, however many events report it.
+     *
+     * Two things stop a single Escape becoming three: a short window after any
+     * counted strike, and the curtain itself. A candidate already looking at
+     * "return to fullscreen" is outside the exam by definition, so the blur
+     * events that follow them clicking around are the same departure, not new
+     * ones. They are still recorded for the invigilator — only uncounted.
+     */
+    const now = Date.now();
+    const sameDeparture = blockedRef.current || now - lastStrikeAt.current < STRIKE_WINDOW_MS;
+
     // The type is what the invigilator's audit report groups by.
-    const count = recordViolation(type, reason);
-    if (kind === "fullscreen") setBlocked(true);
-    else setWarning({ count, reason });
+    const count = recordViolation(type, reason, !sameDeparture);
+    if (!sameDeparture) lastStrikeAt.current = now;
+
+    if (kind === "fullscreen") {
+      blockedRef.current = true;
+      setBlocked(true);
+    } else if (!sameDeparture) {
+      setWarning({ count, reason });
+    }
   }, [recordViolation, status]);
 
   /**
@@ -518,13 +556,32 @@ const Exam = () => {
       const key = typeof e.key === "string" ? e.key : "";
       const lower = key.toLowerCase();
 
-      const blockedKeys = ["Escape", "F1", "F3", "F4", "F5", "F6", "F7", "F8", "F9", "F10", "F11", "F12", "PrintScreen"];
-      if (blockedKeys.includes(key)) e.preventDefault();
-      // Insert carries the old clipboard shortcuts: Ctrl+Insert copies and
-      // Shift+Insert pastes on every desktop browser, and neither was covered.
-      if ((e.ctrlKey || e.metaKey || e.shiftKey) && key === "Insert") e.preventDefault();
-      if ((e.ctrlKey || e.metaKey) && ["c", "v", "x", "a", "p", "s", "u"].includes(lower)) e.preventDefault();
-      if ((e.ctrlKey || e.metaKey) && e.shiftKey && ["i", "j", "c"].includes(lower)) e.preventDefault();
+      /*
+       * The keyboard is closed except for the keys the paper itself uses.
+       *
+       * This was a list of keys to block, which is the wrong way round: every
+       * shortcut nobody had thought of was allowed, and the list had already
+       * grown F-keys, clipboard combinations and the two Insert shortcuts as
+       * each was noticed. A multiple-choice paper needs four number keys and
+       * two arrows; everything else can go, and anything new a browser invents
+       * is closed by default rather than after somebody finds it.
+       *
+       * Escape is the exception it has to be. No page can stop it leaving
+       * fullscreen -- the browser handles it above the document, and
+       * preventDefault here does not reach that -- which is why departing
+       * fullscreen is watched for and forgiven twice rather than prevented.
+       */
+      const ALLOWED = new Set([
+        "ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown",
+        "1", "2", "3", "4",
+        // Enter and space activate whatever option has focus, which is how the
+        // paper is sat without a mouse at all.
+        "Enter", " ", "Spacebar",
+        "Tab",
+      ]);
+
+      const bare = !e.ctrlKey && !e.metaKey && !e.altKey;
+      if (!bare || !ALLOWED.has(key)) e.preventDefault();
 
       if (showSummary) return;
       if (key === "ArrowRight") next();
