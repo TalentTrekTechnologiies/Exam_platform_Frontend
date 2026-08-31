@@ -23,7 +23,20 @@ import ExamPicker from "../../components/Admin/ExamPicker";
 
 const LETTERS = ["A", "B", "C", "D"];
 
+const LANGUAGES = [
+  { id: "c", label: "C" },
+  { id: "cpp", label: "C++" },
+  { id: "java", label: "Java" },
+  { id: "python", label: "Python" },
+];
+
+/** A new, empty case. Sample by default: a question with none is unrunnable. */
+const emptyTest = (sample = false) => ({
+  input: "", expectedOutput: "", sample, weight: 1, label: "",
+});
+
 const emptyForm = (defaults) => ({
+  type: "MCQ",
   text: "",
   options: ["", "", "", ""],
   optionImages: [null, null, null, null],
@@ -32,6 +45,19 @@ const emptyForm = (defaults) => ({
   imagePreview: null,
   marks: defaults.marks,
   negativeMarks: defaults.negativeMarks,
+
+  // ── Coding ────────────────────────────────────────────────────────────────
+  constraintsText: "",
+  sampleInput: "",
+  sampleOutput: "",
+  sampleExplanation: "",
+  allowedLanguages: LANGUAGES.map((l) => l.id),
+  timeLimitMs: 2000,
+  memoryLimitMb: 256,
+  starterCode: "",
+  // One visible case and one hidden one: the minimum shape that is actually an
+  // exam question rather than a demonstration.
+  tests: [emptyTest(true), emptyTest(false)],
 });
 
 const QuestionManagement = () => {
@@ -47,6 +73,18 @@ const QuestionManagement = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [formError, setFormError] = useState("");
+
+  /**
+   * The setter's own solution, run against the key before anybody sits it.
+   *
+   * This is the check that matters most on a coding question. A test case with
+   * a wrong expected output marks correct programs as failed, and nobody finds
+   * out until results are published and the appeals start — by which point the
+   * sitting cannot be re-run.
+   */
+  const [reference, setReference] = useState({ language: "python", sourceCode: "" });
+  const [verifying, setVerifying] = useState(false);
+  const [verifyResult, setVerifyResult] = useState(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
 
@@ -218,8 +256,39 @@ const QuestionManagement = () => {
     return null;
   };
 
+  /**
+   * What must be true before a coding question can be sat.
+   *
+   * Every one of these is a state that produces a broken exam rather than an
+   * error: no cases means nothing to mark against, no sample means the Run
+   * button has nothing to run, and no language means a candidate who cannot
+   * answer at all.
+   */
+  const validateCoding = () => {
+    if (!formData.text.trim()) return "A coding question needs a problem statement.";
+    if (!(Number(formData.marks) > 0)) return "Marks must be greater than zero.";
+    if (!formData.allowedLanguages.length) {
+      return "Allow at least one language, or nobody can answer this question.";
+    }
+
+    const usable = formData.tests.filter(
+      (t) => (t.input ?? "").length > 0 || (t.expectedOutput ?? "").length > 0,
+    );
+    if (!usable.length) return "A coding question needs at least one test case.";
+    if (!usable.some((t) => t.sample)) {
+      return "Mark at least one case as a sample, or candidates have nothing to run against.";
+    }
+    if (usable.some((t) => !(t.expectedOutput ?? "").trim())) {
+      return "Every test case needs an expected output — a blank one marks correct programs as failed.";
+    }
+    if (!(Number(formData.timeLimitMs) > 0)) return "The time limit must be greater than zero.";
+    if (!(Number(formData.memoryLimitMb) > 0)) return "The memory limit must be greater than zero.";
+    return null;
+  };
+
   const handleSave = async (addAnother) => {
-    const problem = validate();
+    const coding = formData.type === "CODING";
+    const problem = coding ? validateCoding() : validate();
     if (problem) { setFormError(problem); return; }
 
     setFormError("");
@@ -241,9 +310,53 @@ const QuestionManagement = () => {
       negativeMarks: Math.abs(Number(formData.negativeMarks) || 0),
     };
 
+    if (coding) {
+      payload.type = "CODING";
+      // A coding question has no options and no key. Sent as nulls rather than
+      // left off, so editing an MCQ into a coding question clears what was
+      // there instead of leaving four orphaned options behind it.
+      payload.optionA = null; payload.optionB = null;
+      payload.optionC = null; payload.optionD = null;
+      payload.optionAImage = null; payload.optionBImage = null;
+      payload.optionCImage = null; payload.optionDImage = null;
+      payload.correctAnswer = null;
+      // Negative marking makes no sense against partial credit on test cases.
+      payload.negativeMarks = 0;
+
+      payload.constraintsText = formData.constraintsText || null;
+      payload.sampleInput = formData.sampleInput || null;
+      payload.sampleOutput = formData.sampleOutput || null;
+      payload.sampleExplanation = formData.sampleExplanation || null;
+      payload.allowedLanguages = formData.allowedLanguages.join(",");
+      payload.timeLimitMs = Number(formData.timeLimitMs);
+      payload.memoryLimitMb = Number(formData.memoryLimitMb);
+      payload.starterCode = formData.starterCode || null;
+    } else {
+      payload.type = "MCQ";
+    }
+
     try {
-      if (editing) await api.put(`/admin/question/${editing.id}`, payload);
-      else await api.post("/admin/question", payload);
+      const savedQuestion = editing
+        ? await api.put(`/admin/question/${editing.id}`, payload)
+        : await api.post("/admin/question", payload);
+
+      if (coding) {
+        // Two calls, because the cases are a separate resource and the hidden
+        // ones must never travel with the paper. The question exists either
+        // way; a failure here leaves it without cases, which publication
+        // refuses to let anybody sit.
+        const questionId = editing ? editing.id : savedQuestion?.id;
+        if (!questionId) throw new Error("The question saved but returned no id, so its test cases could not be attached.");
+        await api.put(`/admin/coding/${questionId}/tests`, formData.tests
+          .filter((t) => (t.input ?? "").length > 0 || (t.expectedOutput ?? "").length > 0)
+          .map((t) => ({
+            input: t.input,
+            expectedOutput: t.expectedOutput,
+            sample: !!t.sample,
+            weight: Number(t.weight) || 1,
+            label: t.label || null,
+          })));
+      }
 
       await reloadQuestions();
 
@@ -278,11 +391,14 @@ const QuestionManagement = () => {
     }
   };
 
-  const openEditor = (q) => {
+  const openEditor = async (q) => {
     setFormError("");
     if (q) {
+      const coding = q.type === "CODING";
       setEditing(q);
       setFormData({
+        ...emptyForm(defaults),
+        type: coding ? "CODING" : "MCQ",
         text: q.questionText || "",
         options: [q.optionA || "", q.optionB || "", q.optionC || "", q.optionD || ""],
         optionImages: [q.optionAImage, q.optionBImage, q.optionCImage, q.optionDImage],
@@ -291,15 +407,83 @@ const QuestionManagement = () => {
         imagePreview: q.questionImage || null,
         marks: q.marks ?? defaults.marks,
         negativeMarks: q.negativeMarks ?? defaults.negativeMarks,
+
+        constraintsText: q.constraintsText || "",
+        sampleInput: q.sampleInput || "",
+        sampleOutput: q.sampleOutput || "",
+        sampleExplanation: q.sampleExplanation || "",
+        allowedLanguages: q.allowedLanguages
+          ? String(q.allowedLanguages).split(",").map((x) => x.trim()).filter(Boolean)
+          : LANGUAGES.map((l) => l.id),
+        timeLimitMs: q.timeLimitMs ?? 2000,
+        memoryLimitMb: q.memoryLimitMb ?? 256,
+        starterCode: q.starterCode || "",
+        tests: [emptyTest(true), emptyTest(false)],
       });
-    } else {
-      setEditing(null);
-      setFormData(emptyForm(defaults));
+      setModalOpen(true);
+
+      // The cases live on their own endpoint and are fetched only when a
+      // coding question is actually opened — they are the answer key, and the
+      // question list has no business carrying them.
+      if (coding) {
+        try {
+          const tests = await api.get(`/admin/coding/${q.id}/tests`);
+          if (Array.isArray(tests) && tests.length) {
+            setFormData((prev) => ({
+              ...prev,
+              tests: tests.map((t) => ({
+                input: t.input || "",
+                expectedOutput: t.expectedOutput || "",
+                sample: !!t.sample,
+                weight: t.weight ?? 1,
+                label: t.label || "",
+              })),
+            }));
+          }
+        } catch (e) {
+          setFormError(e.message || "The test cases for this question could not be loaded — saving now would replace them.");
+        }
+      }
+      return;
     }
+
+    setEditing(null);
+    setFormData(emptyForm(defaults));
     setModalOpen(true);
   };
 
   const setField = (patch) => setFormData((prev) => ({ ...prev, ...patch }));
+
+  /**
+   * Saves the current cases, then runs the reference solution against them.
+   *
+   * Saving first is deliberate: checking against what is in the database while
+   * the form holds something different would pass a question the candidates
+   * will not get.
+   */
+  const verifyReference = async () => {
+    if (!editing || verifying) return;
+    setVerifying(true);
+    setVerifyResult(null);
+    setFormError("");
+    try {
+      await api.put(`/admin/coding/${editing.id}/tests`, formData.tests
+        .filter((t) => (t.input ?? "").length > 0 || (t.expectedOutput ?? "").length > 0)
+        .map((t) => ({
+          input: t.input,
+          expectedOutput: t.expectedOutput,
+          sample: !!t.sample,
+          weight: Number(t.weight) || 1,
+          label: t.label || null,
+        })));
+
+      setVerifyResult(await api.post(`/admin/coding/${editing.id}/verify`, reference));
+    } catch (e) {
+      setFormError(e.message || "The reference solution could not be run. Is a judge configured?");
+    } finally {
+      setVerifying(false);
+    }
+  };
 
   if (!examId) {
     return (
@@ -476,12 +660,15 @@ const QuestionManagement = () => {
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {filtered.map((q, idx) => {
+                  const coding = q.type === "CODING";
                   const keyIndex = LETTERS.indexOf(q.correctAnswer);
                   const keyText = keyIndex >= 0 ? q[`option${q.correctAnswer}`] : null;
                   const keyImage = keyIndex >= 0 ? q[`option${q.correctAnswer}Image`] : null;
                   // Surfaced in the list, not just on save, because a question
                   // imported before this check existed can still carry the fault.
-                  const brokenKey = !q.correctAnswer || (!keyText?.trim() && !keyImage);
+                  // A coding question has no key to break — its equivalent
+                  // fault is having no test cases, which publication catches.
+                  const brokenKey = !coding && (!q.correctAnswer || (!keyText?.trim() && !keyImage));
 
                   return (
                     <tr key={q.id} className="align-top transition-colors hover:bg-gray-50">
@@ -489,6 +676,11 @@ const QuestionManagement = () => {
                       <td className="px-5 py-4">
                         <p className="max-w-xl text-sm text-gray-900 line-clamp-2">{q.questionText}</p>
                         <div className="mt-1.5 flex items-center gap-3 text-xs text-gray-500">
+                          {coding && (
+                            <span className="rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                              Coding
+                            </span>
+                          )}
                           {q.questionImage && <span className="flex items-center gap-1"><FiImage size={12} /> figure</span>}
                           {[q.optionAImage, q.optionBImage, q.optionCImage, q.optionDImage].some(Boolean) && (
                             <span className="flex items-center gap-1"><FiImage size={12} /> option images</span>
@@ -558,8 +750,37 @@ const QuestionManagement = () => {
              title={editing ? "Edit question" : "New question"} size="xl">
         <div className="max-h-[78vh] space-y-6 overflow-y-auto px-1 py-1">
 
+          {/* Type first, because it decides what the rest of this form is. */}
           <section>
-            <label className="exam-label mb-2 block">Question</label>
+            <label className="exam-label mb-2 block">Question type</label>
+            <div className="flex gap-2">
+              {[["MCQ", "Multiple choice"], ["CODING", "Coding"]].map(([id, label]) => (
+                <button
+                  key={id}
+                  type="button"
+                  onClick={() => setField({ type: id })}
+                  className={`rounded-exam px-4 py-2 text-sm font-semibold transition-colors ${
+                    formData.type === id
+                      ? "bg-primary-700 text-white"
+                      : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            {formData.type === "CODING" && (
+              <p className="mt-2 text-xs text-gray-500">
+                Candidates write and run a program. Negative marking does not apply — marks are
+                earned per test case passed.
+              </p>
+            )}
+          </section>
+
+          <section>
+            <label className="exam-label mb-2 block">
+              {formData.type === "CODING" ? "Problem statement" : "Question"}
+            </label>
             <textarea
               rows={3}
               value={formData.text}
@@ -592,6 +813,7 @@ const QuestionManagement = () => {
             )}
           </section>
 
+          {formData.type !== "CODING" && (
           <section>
             <label className="exam-label mb-2 block">Options — select the correct one</label>
             <div className="grid gap-2 sm:grid-cols-2">
@@ -652,6 +874,243 @@ const QuestionManagement = () => {
               })}
             </div>
           </section>
+          )}
+
+          {formData.type === "CODING" && (
+            <>
+              <section className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="exam-label mb-2 block">Sample input</label>
+                  <textarea rows={4} value={formData.sampleInput}
+                            onChange={(e) => setField({ sampleInput: e.target.value })}
+                            className="w-full rounded-exam border border-gray-300 p-3 font-mono text-[13px] outline-none focus:border-primary-600" />
+                </div>
+                <div>
+                  <label className="exam-label mb-2 block">Sample output</label>
+                  <textarea rows={4} value={formData.sampleOutput}
+                            onChange={(e) => setField({ sampleOutput: e.target.value })}
+                            className="w-full rounded-exam border border-gray-300 p-3 font-mono text-[13px] outline-none focus:border-primary-600" />
+                </div>
+              </section>
+
+              <section className="grid gap-4 sm:grid-cols-2">
+                <div>
+                  <label className="exam-label mb-2 block">
+                    Constraints <span className="font-normal normal-case text-gray-400">(optional)</span>
+                  </label>
+                  <textarea rows={3} value={formData.constraintsText}
+                            onChange={(e) => setField({ constraintsText: e.target.value })}
+                            className="w-full rounded-exam border border-gray-300 p-3 font-mono text-[13px] outline-none focus:border-primary-600" />
+                </div>
+                <div>
+                  <label className="exam-label mb-2 block">
+                    Explanation <span className="font-normal normal-case text-gray-400">(optional)</span>
+                  </label>
+                  <textarea rows={3} value={formData.sampleExplanation}
+                            onChange={(e) => setField({ sampleExplanation: e.target.value })}
+                            className="w-full rounded-exam border border-gray-300 p-3 text-sm outline-none focus:border-primary-600" />
+                </div>
+              </section>
+
+              <section className="rounded-exam border border-gray-200 bg-gray-50 p-4">
+                <label className="exam-label mb-2 block">Languages allowed</label>
+                <div className="flex flex-wrap gap-2">
+                  {LANGUAGES.map((l) => {
+                    const on = formData.allowedLanguages.includes(l.id);
+                    return (
+                      <button
+                        key={l.id}
+                        type="button"
+                        onClick={() => setField({
+                          allowedLanguages: on
+                            ? formData.allowedLanguages.filter((x) => x !== l.id)
+                            : [...formData.allowedLanguages, l.id],
+                        })}
+                        className={`rounded-exam px-3 py-1.5 text-sm font-semibold transition-colors ${
+                          on ? "bg-primary-700 text-white" : "border border-gray-300 bg-white text-gray-600"
+                        }`}
+                      >
+                        {l.label}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                  <div>
+                    <label className="exam-label mb-2 block">Time limit (ms)</label>
+                    <input type="number" min="100" step="100" value={formData.timeLimitMs}
+                           onChange={(e) => setField({ timeLimitMs: e.target.value })}
+                           className="tabular h-10 w-full rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600" />
+                  </div>
+                  <div>
+                    <label className="exam-label mb-2 block">Memory limit (MB)</label>
+                    <input type="number" min="16" step="16" value={formData.memoryLimitMb}
+                           onChange={(e) => setField({ memoryLimitMb: e.target.value })}
+                           className="tabular h-10 w-full rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600" />
+                  </div>
+                </div>
+
+                <label className="exam-label mb-2 mt-4 block">
+                  Starter code <span className="font-normal normal-case text-gray-400">(optional)</span>
+                </label>
+                <textarea rows={4} value={formData.starterCode}
+                          onChange={(e) => setField({ starterCode: e.target.value })}
+                          className="w-full rounded-exam border border-gray-300 bg-white p-3 font-mono text-[13px] outline-none focus:border-primary-600" />
+              </section>
+
+              {/* Samples are shown to candidates and are what Run executes
+                  against. Hidden cases are the marking and never leave the
+                  server. Weight lets an edge case count for more than a happy
+                  path — the difference between rewarding a correct program and
+                  rewarding one that merely handles the example. */}
+              <section>
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+                  <label className="exam-label">Test cases</label>
+                  <div className="flex items-center gap-2">
+                    <button type="button"
+                            onClick={() => setField({ tests: [...formData.tests, emptyTest(true)] })}
+                            className="text-sm font-semibold text-primary-700 hover:underline">
+                      + Sample
+                    </button>
+                    <button type="button"
+                            onClick={() => setField({ tests: [...formData.tests, emptyTest(false)] })}
+                            className="text-sm font-semibold text-primary-700 hover:underline">
+                      + Hidden
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {formData.tests.map((t, i) => (
+                    <div key={i}
+                         className={`rounded-exam border p-3 ${t.sample ? "border-primary-200 bg-primary-50/40" : "border-gray-200 bg-white"}`}>
+                      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                        <label className="flex cursor-pointer items-center gap-2 text-xs font-semibold text-gray-700">
+                          <input type="checkbox" checked={!!t.sample}
+                                 onChange={(e) => setField({
+                                   tests: formData.tests.map((x, j) => (j === i ? { ...x, sample: e.target.checked } : x)),
+                                 })} />
+                          Shown to candidates
+                        </label>
+                        <div className="flex items-center gap-3">
+                          <label className="flex items-center gap-1 text-xs text-gray-500">
+                            Weight
+                            <input type="number" min="0" step="0.5" value={t.weight}
+                                   onChange={(e) => setField({
+                                     tests: formData.tests.map((x, j) => (j === i ? { ...x, weight: e.target.value } : x)),
+                                   })}
+                                   className="tabular h-7 w-16 rounded border border-gray-300 px-2 text-xs" />
+                          </label>
+                          <button type="button"
+                                  onClick={() => setField({ tests: formData.tests.filter((_, j) => j !== i) })}
+                                  className="rounded p-1 text-gray-400 hover:bg-red-50 hover:text-red-600">
+                            <FiX size={14} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="grid gap-2 sm:grid-cols-2">
+                        <textarea rows={3} value={t.input} placeholder="Input"
+                                  onChange={(e) => setField({
+                                    tests: formData.tests.map((x, j) => (j === i ? { ...x, input: e.target.value } : x)),
+                                  })}
+                                  className="w-full rounded border border-gray-300 p-2 font-mono text-[12px] outline-none focus:border-primary-600" />
+                        <textarea rows={3} value={t.expectedOutput} placeholder="Expected output"
+                                  onChange={(e) => setField({
+                                    tests: formData.tests.map((x, j) => (j === i ? { ...x, expectedOutput: e.target.value } : x)),
+                                  })}
+                                  className="w-full rounded border border-gray-300 p-2 font-mono text-[12px] outline-none focus:border-primary-600" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </section>
+
+              <section className="rounded-exam border border-gray-200 bg-white p-4">
+                <label className="exam-label mb-1 block">Check the key</label>
+                <p className="mb-3 text-xs text-gray-500">
+                  Paste a solution you know is correct and run it against every case. A case with a
+                  wrong expected output marks correct programs as failed, and nobody finds out until
+                  the appeals.
+                </p>
+
+                {!editing ? (
+                  <p className="rounded-exam bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                    Save the question first — the cases have to exist before anything can be run
+                    against them.
+                  </p>
+                ) : (
+                  <>
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <select
+                        value={reference.language}
+                        onChange={(e) => setReference({ ...reference, language: e.target.value })}
+                        className="h-9 rounded-exam border border-gray-300 bg-white px-3 text-sm outline-none focus:border-primary-600"
+                      >
+                        {LANGUAGES.filter((l) => formData.allowedLanguages.includes(l.id))
+                          .map((l) => <option key={l.id} value={l.id}>{l.label}</option>)}
+                      </select>
+                      <button
+                        type="button"
+                        onClick={verifyReference}
+                        disabled={verifying || !reference.sourceCode.trim()}
+                        className="exam-action-quiet disabled:opacity-50"
+                      >
+                        {verifying ? "Running…" : "Save cases & run"}
+                      </button>
+                    </div>
+
+                    <textarea
+                      rows={6}
+                      value={reference.sourceCode}
+                      onChange={(e) => setReference({ ...reference, sourceCode: e.target.value })}
+                      placeholder="A solution you know is correct."
+                      className="w-full rounded-exam border border-gray-300 bg-chrome p-3 font-mono text-[13px] text-gray-100 outline-none focus:border-primary-600"
+                      style={{ tabSize: 4, whiteSpace: "pre", overflowX: "auto" }}
+                    />
+
+                    {verifyResult && (
+                      <div className={`mt-3 rounded-exam border px-4 py-3 text-sm ${
+                        verifyResult.allPassed
+                          ? "border-green-200 bg-green-50 text-green-900"
+                          : "border-amber-300 bg-amber-50 text-amber-900"
+                      }`}>
+                        <p className="font-semibold">
+                          {verifyResult.passed}/{verifyResult.total} cases agree with this solution
+                        </p>
+                        <p className="mt-0.5 text-xs">{verifyResult.message}</p>
+
+                        {/* Staff may see every case, hidden ones included: it is
+                            their key. Only the disagreements are worth the space. */}
+                        {!verifyResult.allPassed && (
+                          <ul className="mt-3 space-y-2">
+                            {(verifyResult.cases || []).filter((c) => !c.passed).map((c, i) => (
+                              <li key={i} className="rounded bg-white/70 p-2">
+                                <p className="text-xs font-semibold">
+                                  Case {(verifyResult.cases || []).indexOf(c) + 1}
+                                  {c.sample ? " (sample)" : " (hidden)"}
+                                </p>
+                                <div className="mt-1 grid gap-2 sm:grid-cols-2">
+                                  <div>
+                                    <p className="exam-label mb-0.5">Expected</p>
+                                    <pre className="overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[12px] text-gray-800">{c.expectedOutput ?? ""}</pre>
+                                  </div>
+                                  <div>
+                                    <p className="exam-label mb-0.5">Solution produced</p>
+                                    <pre className="overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[12px] text-gray-800">{c.actualOutput ?? c.stderr ?? ""}</pre>
+                                  </div>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
+            </>
+          )}
 
           <section className="grid gap-4 rounded-exam border border-gray-200 bg-gray-50 p-4 sm:grid-cols-3">
             <div>
