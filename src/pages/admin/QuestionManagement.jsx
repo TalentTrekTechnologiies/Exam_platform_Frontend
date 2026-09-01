@@ -1093,11 +1093,11 @@ const QuestionManagement = () => {
                                 <div className="mt-1 grid gap-2 sm:grid-cols-2">
                                   <div>
                                     <p className="exam-label mb-0.5">Expected</p>
-                                    <pre className="overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[12px] text-gray-800">{c.expectedOutput ?? ""}</pre>
+                                    <pre className="overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[12px] text-gray-800">{c.expected ?? ""}</pre>
                                   </div>
                                   <div>
                                     <p className="exam-label mb-0.5">Solution produced</p>
-                                    <pre className="overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[12px] text-gray-800">{c.actualOutput ?? c.stderr ?? ""}</pre>
+                                    <pre className="overflow-x-auto rounded bg-gray-50 px-2 py-1 text-[12px] text-gray-800">{c.actual ?? c.stderr ?? ""}</pre>
                                   </div>
                                 </div>
                               </li>

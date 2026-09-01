@@ -252,13 +252,13 @@ const CodingPanel = ({ question, attemptId, savedCode, onSaved, disabled }) => {
                     <div>
                       <p className="exam-label mb-1">Expected</p>
                       <pre className="overflow-x-auto rounded bg-gray-50 px-3 py-2 text-[12px] text-gray-800">
-{c.expectedOutput ?? ""}
+{c.expected ?? ""}
                       </pre>
                     </div>
                     <div>
                       <p className="exam-label mb-1">Your output</p>
                       <pre className="overflow-x-auto rounded bg-gray-50 px-3 py-2 text-[12px] text-gray-800">
-{c.actualOutput ?? c.stderr ?? ""}
+{c.actual ?? c.stderr ?? ""}
                       </pre>
                     </div>
                   </div>
