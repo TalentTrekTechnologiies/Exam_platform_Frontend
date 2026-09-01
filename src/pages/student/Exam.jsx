@@ -187,6 +187,7 @@ const Exam = () => {
   const {
     attemptId, questions, answers, remainingSeconds, status, error, syncState,
     strikes, recordViolation, saveAnswer, clearAnswer, toggleMarkForReview,
+    sectionClock,
     markVisited, submitExam, setExpiryHandler,
     statusOf, sections, counts, markedForReview,
   } = useExam();
@@ -239,6 +240,36 @@ const Exam = () => {
 
   const currentQuestion = questions[currentIndex];
   const currentSection = sections.find((s) => s.indices.includes(currentIndex));
+
+  /**
+   * On a sectional paper, the section the server says is open.
+   *
+   * Everything here is presentation. The server refuses an answer to a closed
+   * section whatever this shows — a lock the candidate's own machine enforces
+   * is not a lock, and this only exists so they are not clicking into
+   * something that will refuse them.
+   */
+  const sectionStates = sectionClock?.sections || null;
+  const openSectionId = sectionClock?.currentSectionId ?? null;
+  const stateOfSection = (sectionId) =>
+    sectionStates?.find((x) => String(x.sectionId) === String(sectionId))?.state || null;
+
+  /**
+   * Follows the server when a section closes.
+   *
+   * The candidate is moved to the first question of the newly open section
+   * rather than left staring at one they can no longer answer. Depends on the
+   * open section id, so it fires exactly once per boundary.
+   */
+  useEffect(() => {
+    if (!openSectionId || !questions.length) return;
+    const inOpenSection = questions[currentIndex]
+      && String(questions[currentIndex].sectionId) === String(openSectionId);
+    if (inOpenSection) return;
+
+    const first = questions.findIndex((q) => String(q.sectionId) === String(openSectionId));
+    if (first >= 0) setCurrentIndex(first);
+  }, [openSectionId, questions.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Guards ───────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -393,14 +424,46 @@ const Exam = () => {
   }, [stream, videoEl, examInfo, attemptId, recordViolation]);
 
   // ── Navigation ───────────────────────────────────────────────────────────
+  /**
+   * Every route into a question goes through here.
+   *
+   * Which makes it the one place a sectional paper has to be honest about its
+   * boundary: the palette, the section tabs, the arrow keys and Save & Next all
+   * arrive at this function, and guarding each of them separately is how one of
+   * them ends up unguarded. On an ordinary paper the clamp below is the whole
+   * of the paper, so nothing changes.
+   */
   const goTo = useCallback((index) => {
-    setCurrentIndex(Math.max(0, Math.min(index, questions.length - 1)));
+    let target = Math.max(0, Math.min(index, questions.length - 1));
+
+    if (openSectionId) {
+      const inOpen = questions
+        .map((q, i) => (String(q.sectionId) === String(openSectionId) ? i : -1))
+        .filter((i) => i >= 0);
+      if (inOpen.length) {
+        // Refuse rather than clamp to the nearest: silently landing somebody on
+        // a different question than the one they clicked is worse than not
+        // moving, because they will not notice.
+        if (!inOpen.includes(target)) return;
+      }
+    }
+
+    setCurrentIndex(target);
     setShowPalette(false);
-  }, [questions.length]);
+  }, [questions, openSectionId]);
 
   const next = useCallback(() => {
-    setCurrentIndex((i) => Math.min(i + 1, questions.length - 1));
-  }, [questions.length]);
+    setCurrentIndex((i) => {
+      const candidate = Math.min(i + 1, questions.length - 1);
+      // Stops at the end of the open section rather than walking into the next
+      // one, which is not open yet.
+      if (openSectionId && questions[candidate]
+          && String(questions[candidate].sectionId) !== String(openSectionId)) {
+        return i;
+      }
+      return candidate;
+    });
+  }, [questions, openSectionId]);
 
   /**
    * "Save & Next" — the answer is already persisted the moment an option is
@@ -639,7 +702,7 @@ const Exam = () => {
 
       if (showSummary) return;
       if (key === "ArrowRight") next();
-      if (key === "ArrowLeft") setCurrentIndex((i) => Math.max(i - 1, 0));
+      if (key === "ArrowLeft") goTo(currentIndex - 1);
 
       // 1–4 selects an option, the way a practised candidate works a paper.
       const slot = Number(key);
@@ -671,7 +734,7 @@ const Exam = () => {
       document.removeEventListener("keydown", onKeyDown, true);
       events.forEach((ev) => document.removeEventListener(ev, prevent, true));
     };
-  }, [status, showSummary, next, currentQuestion, saveAnswer]);
+  }, [status, showSummary, next, goTo, currentIndex, currentQuestion, saveAnswer]);
 
   /**
    * Nothing on the paper is selectable while it is being sat.
@@ -807,6 +870,19 @@ const Exam = () => {
           <div className="hidden text-right sm:block">
             <div className="exam-label text-gray-400">Time left</div>
           </div>
+          {/* On a sectional paper the section's clock is the one that matters
+              to the candidate right now; the paper's own stays beside it so
+              they can still see the whole picture. */}
+          {sectionClock?.sectional && (
+            <div className="rounded-exam bg-amber-500/20 px-3 py-1.5 text-right">
+              <div className="exam-label text-amber-200">This section</div>
+              <div className="tabular text-lg font-semibold leading-none text-amber-100">
+                {String(Math.floor((sectionClock.sectionRemainingSeconds || 0) / 60)).padStart(2, "0")}
+                :
+                {String((sectionClock.sectionRemainingSeconds || 0) % 60).padStart(2, "0")}
+              </div>
+            </div>
+          )}
           <Timer seconds={remainingSeconds} />
           <button
             onClick={() => setShowPalette((v) => !v)}
@@ -823,17 +899,28 @@ const Exam = () => {
         <nav className="flex shrink-0 items-stretch gap-0 overflow-x-auto border-b border-gray-200 bg-white px-4 lg:px-6">
           {sections.map((section) => {
             const active = currentSection?.startIndex === section.startIndex;
+            // CLOSED is finished and final; UPCOMING has not opened yet.
+            // Neither is reachable, and saying which is which is the difference
+            // between a locked door and a broken one.
+            const state = stateOfSection(section.sectionId);
+            const locked = state === "CLOSED" || state === "UPCOMING";
             return (
               <button
                 key={`${section.name}-${section.startIndex}`}
-                onClick={() => goTo(section.startIndex)}
+                onClick={() => { if (!locked) goTo(section.startIndex); }}
+                disabled={locked}
                 aria-current={active ? "page" : undefined}
+                title={state === "CLOSED" ? "This section has ended and cannot be reopened."
+                     : state === "UPCOMING" ? "This section has not started yet."
+                     : undefined}
                 className={`whitespace-nowrap border-b-2 px-5 py-3 text-[13px] font-semibold
                             transition-colors duration-150
-                            ${active
+                            ${locked ? "cursor-not-allowed border-transparent text-gray-300"
+                              : active
                               ? "border-primary-700 text-primary-800"
                               : "border-transparent text-gray-500 hover:text-gray-800"}`}
               >
+                {state === "CLOSED" && <span className="mr-1.5" aria-hidden>&#128274;</span>}
                 {section.name}
                 <span className="ml-2 text-[11px] font-medium text-gray-400 tabular">
                   {section.tally.answered + section.tally.answeredMarked}/{section.total}
@@ -878,7 +965,7 @@ const Exam = () => {
 
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
+                  onClick={() => goTo(currentIndex - 1)}
                   disabled={currentIndex === 0}
                   className="exam-action-quiet"
                 >

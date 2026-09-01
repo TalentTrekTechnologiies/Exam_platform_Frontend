@@ -102,6 +102,16 @@ export const ExamProvider = ({ children }) => {
   // Rule violations only — this is what the three-strike rule counts.
   const [strikes, setStrikes] = useState(0);
 
+  /**
+   * Sectional state, as the server sees it.
+   *
+   * Null on an ordinary paper, which is every exam that does not set a
+   * duration on its sections. The server owns which section is open and when
+   * it closes; this is a copy for the paper to draw with, never the authority.
+   * An answer to a closed section is refused server-side whatever this says.
+   */
+  const [sectionClock, setSectionClock] = useState(null);
+
   // Answers that haven't reached the server yet: { [questionId]: option }
   const pending = useRef({});
   // Read back synchronously the moment a violation is recorded, which a
@@ -289,15 +299,27 @@ export const ExamProvider = ({ children }) => {
       try {
         const clock = await examApi.remaining(attemptId);
         setRemainingSeconds(clock.remainingSeconds);
+        // The same poll advances the sectional boundary server-side, so this
+        // is where a section closing becomes visible to the candidate.
+        setSectionClock(clock.sectional ? clock : null);
         if (clock.expired && onExpiry.current) onExpiry.current();
       } catch {
         // Offline: keep ticking locally and reconcile on the next successful poll.
       }
     };
 
+    // Once immediately: waiting a full sync interval would show a sectional
+    // candidate no section clock for the first twenty seconds of their paper.
+    sync();
+
     const syncTimer = setInterval(sync, CLOCK_SYNC_MS);
     const tickTimer = setInterval(() => {
       setRemainingSeconds((s) => (s == null ? s : Math.max(0, s - 1)));
+      // Locally between polls, for the same reason the paper's clock ticks
+      // locally: a number that only moved every twenty seconds reads as frozen.
+      // The server's value replaces it on every sync.
+      setSectionClock((sc) => (sc == null || sc.sectionRemainingSeconds == null ? sc
+        : { ...sc, sectionRemainingSeconds: Math.max(0, sc.sectionRemainingSeconds - 1) }));
     }, 1000);
 
     return () => {
@@ -407,6 +429,7 @@ export const ExamProvider = ({ children }) => {
         questions, answers, markedForReview, visited,
         remainingSeconds, status, error, syncState,
         violations, strikes, recordViolation,
+        sectionClock,
         saveAnswer, clearAnswer, toggleMarkForReview, markVisited,
         submitExam, setExpiryHandler,
         statusOf, sections, counts, answeredCount, unansweredCount,

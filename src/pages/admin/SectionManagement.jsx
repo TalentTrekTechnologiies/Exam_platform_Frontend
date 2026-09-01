@@ -11,7 +11,7 @@ const SectionManagement = () => {
   const [sections, setSections] = useState([]);
   const [loading, setLoading] = useState(false);
   const [editingId, setEditingId] = useState(null);
-  const [form, setForm] = useState({ name: "", totalMarks: "", questionsToDraw: "" });
+  const [form, setForm] = useState({ name: "", totalMarks: "", questionsToDraw: "", durationMinutes: "" });
   // How many questions each section actually holds, so "20 of 70" means something.
   const [bankBySection, setBankBySection] = useState({});
 
@@ -67,6 +67,9 @@ const SectionManagement = () => {
       // Blank means every question in the section, which is what an exam that
       // has never heard of drawing already does.
       questionsToDraw: form.questionsToDraw === "" ? null : parseInt(form.questionsToDraw) || null,
+      // Blank means the paper has one clock. Sectional timing is all or
+      // nothing, and publication refuses a paper where only some are set.
+      durationMinutes: form.durationMinutes === "" ? null : parseInt(form.durationMinutes) || null,
       examId: parseInt(examId)
     };
 
@@ -84,7 +87,7 @@ const SectionManagement = () => {
       });
 
       if (res.ok) {
-        setForm({ name: "", totalMarks: "", questionsToDraw: "" });
+        setForm({ name: "", totalMarks: "", questionsToDraw: "", durationMinutes: "" });
         setEditingId(null);
         fetchSections();
       }
@@ -99,6 +102,7 @@ const SectionManagement = () => {
       name: section.name,
       totalMarks: section.totalMarks || "",
       questionsToDraw: section.questionsToDraw ?? "",
+      durationMinutes: section.durationMinutes ?? "",
     });
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
@@ -163,6 +167,24 @@ const SectionManagement = () => {
                 that many at random from this section.
               </p>
             </div>
+            <div className="md:col-span-1">
+              <label className="block text-xs font-bold text-gray-400 uppercase tracking-widest mb-2 ml-1">
+                Section Time (min)
+              </label>
+              <input
+                type="number"
+                min="1"
+                placeholder="No limit"
+                className="w-full px-5 py-3.5 rounded-2xl bg-gray-50 border border-transparent focus:bg-white focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10 outline-none transition-all text-gray-700 font-medium"
+                value={form.durationMinutes}
+                onChange={(e) => setForm({ ...form, durationMinutes: e.target.value })}
+              />
+              <p className="mt-2 ml-1 text-xs text-gray-400">
+                Set this on <span className="font-semibold">every</span> section to make the paper
+                sectional: sat in order, and a section whose time is up closes for good. Leave all
+                blank for one clock and free navigation.
+              </p>
+            </div>
             <button
               type="submit"
               className={`w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all active:scale-95 shadow-lg ${
@@ -205,6 +227,11 @@ const SectionManagement = () => {
                     <p className="text-sm text-gray-400 font-medium flex items-center gap-1">
                       Target Score: <span className="text-indigo-500">{s.totalMarks || 0} Marks</span>
                     </p>
+                    {s.durationMinutes > 0 && (
+                      <p className="text-sm font-semibold text-amber-600">
+                        Timed: {s.durationMinutes} min — closes for good when it ends
+                      </p>
+                    )}
                     {(() => {
                       const bank = bankBySection[s.id] || 0;
                       const draw = s.questionsToDraw;
