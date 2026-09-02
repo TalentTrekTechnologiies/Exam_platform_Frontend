@@ -216,8 +216,20 @@ export default function ReuseQuestions() {
                           {preview(q)}
                         </span>
                         <span className="mt-0.5 block text-xs text-gray-500">
-                          Answer {q.correctAnswer} · {q.marks ?? 1} mark{(q.marks ?? 1) === 1 ? "" : "s"}
-                          {q.negativeMarks ? ` · −${q.negativeMarks} wrong` : ""}
+                          {/* A coding question has no A/B/C/D to name, and
+                              printing "Answer" with a blank after it reads as
+                              a question missing its key rather than one that
+                              never had one. */}
+                          {q.type === "CODING" ? (
+                            <span className="mr-1 rounded bg-primary-50 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-primary-700">
+                              Coding
+                            </span>
+                          ) : (
+                            <>Answer {q.correctAnswer} · </>
+                          )}
+                          {q.marks ?? 1} mark{(q.marks ?? 1) === 1 ? "" : "s"}
+                          {q.type !== "CODING" && q.negativeMarks ? ` · −${q.negativeMarks} wrong` : ""}
+                          {q.type === "CODING" ? " · test cases copy with it" : ""}
                         </span>
                       </span>
                       {q.questionImage && (
