@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from "react";
 import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
+import CodeSubmissions from "../../components/Admin/CodeSubmissions";
 import { FiDownload, FiInbox, FiSearch, FiEye, FiEyeOff, FiAlertTriangle } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 
@@ -326,6 +327,10 @@ const Reports = () => {
               </div>
             )}
           </div>
+
+          {/* Renders nothing on a paper with no coding questions, which is
+              most of them. */}
+          <CodeSubmissions examId={examId} />
         </>
       )}
     </Layout>
