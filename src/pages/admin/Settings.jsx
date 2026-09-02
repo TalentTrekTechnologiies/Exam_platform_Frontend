@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../../components/Layout/Layout";
-import { API_BASE, api, uploadUrl, readAdmin } from "../../lib/api";
+import { API_BASE, api, uploadUrl, readAdmin, appPath } from "../../lib/api";
 import { FiImage, FiCheck, FiAlertTriangle, FiVideo, FiMic } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 
@@ -52,6 +52,32 @@ const Settings = () => {
   const [exam, setExam] = useState(null);
   const [examError, setExamError] = useState("");
   const [proctorSaving, setProctorSaving] = useState(false);
+
+  /**
+   * Deleting an exam asks for its title to be typed out.
+   *
+   * Not a confirm dialog. This removes a paper, its questions, its sections and
+   * its schedule, and there is no undo — the one thing that reliably stops a
+   * mis-click is having to write down what you are destroying.
+   */
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [typedTitle, setTypedTitle] = useState("");
+  const [deleting, setDeleting] = useState(false);
+
+  const deleteExam = async () => {
+    setDeleting(true);
+    setExamError("");
+    try {
+      await api.del(`/admin/exam/${examId}`);
+      // The console works on "the exam you are on", and that exam is gone.
+      localStorage.removeItem("examId");
+      localStorage.removeItem("slotId");
+      window.location.href = appPath("/admin/dashboard");
+    } catch (e) {
+      setExamError(e.message || "That exam could not be deleted.");
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     (async () => {
@@ -250,6 +276,63 @@ const Settings = () => {
             </div>
           )}
         </div>
+
+        {/* ── Deleting the exam ──────────────────────────────────────────── */}
+        {exam && (
+          <div className="mt-6 rounded-exam border border-red-200 bg-white">
+            <div className="border-b border-red-100 px-6 py-4">
+              <h2 className="font-semibold text-red-900">Delete this exam</h2>
+              <p className="mt-1 text-sm text-gray-600">
+                Removes <span className="font-semibold">{exam.title}</span> along with its
+                questions, sections, schedule and enrolments. There is no undo.
+              </p>
+            </div>
+
+            <div className="px-6 py-5">
+              <p className="mb-4 rounded-exam bg-gray-50 px-4 py-3 text-sm text-gray-700">
+                An exam anybody has already sat cannot be deleted — that would erase their
+                answers and marks. Unpublish it instead: it disappears from candidates without
+                disappearing from Results.
+              </p>
+
+              {!confirmDelete ? (
+                <button
+                  onClick={() => { setConfirmDelete(true); setTypedTitle(""); }}
+                  className="rounded-exam border border-red-300 px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
+                >
+                  Delete this exam
+                </button>
+              ) : (
+                <div className="space-y-3">
+                  <label className="block text-sm text-gray-700">
+                    Type <span className="font-semibold text-gray-900">{exam.title}</span> to confirm:
+                  </label>
+                  <input
+                    value={typedTitle}
+                    onChange={(e) => setTypedTitle(e.target.value)}
+                    placeholder={exam.title}
+                    className="w-full max-w-sm rounded-exam border border-gray-300 px-4 py-2 text-sm outline-none focus:border-red-500"
+                  />
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={deleteExam}
+                      disabled={deleting || typedTitle.trim() !== (exam.title || "").trim()}
+                      className="rounded-exam bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
+                    >
+                      {deleting ? "Deleting…" : "Delete permanently"}
+                    </button>
+                    <button
+                      onClick={() => setConfirmDelete(false)}
+                      className="text-sm font-semibold text-gray-500 hover:text-gray-800"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </Layout>
   );
