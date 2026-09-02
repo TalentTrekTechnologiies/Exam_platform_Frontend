@@ -315,8 +315,10 @@ export const examApi = {
   // hidden ones, and stores the code. Judging at submit rather than at the
   // final whistle is what stops five thousand programs being compiled in the
   // same minute.
-  runCode: (attemptId, questionId, language, sourceCode) =>
-    api.post("/student/code/run", { attemptId, questionId, language, sourceCode }),
+  // stdin, when given, runs against the candidate's own input instead of the
+  // sample cases — and never touches a test case, so Run cannot probe the key.
+  runCode: (attemptId, questionId, language, sourceCode, stdin) =>
+    api.post("/student/code/run", { attemptId, questionId, language, sourceCode, stdin }),
   submitCode: (attemptId, questionId, language, sourceCode) =>
     api.post("/student/code/submit", { attemptId, questionId, language, sourceCode }),
   codeLanguages: (questionId) => api.get(`/student/code/languages/${questionId}`),
