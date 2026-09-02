@@ -13,6 +13,8 @@ import {
   FiUploadCloud,
   FiSend,
   FiUserPlus,
+  FiLayers,
+  FiClock,
 } from "react-icons/fi";
 import { useAuth } from "../../contexts/AuthContext";
 import { API_BASE, readAdmin } from "../../lib/api";
@@ -27,6 +29,11 @@ const Sidebar = ({ isOpen, isMobile, onClose }) => {
   const navItems = [
     { path: "/admin/dashboard", icon: FiHome, label: "Dashboard" },
     { path: "/admin/questions", icon: FiBook, label: "Questions" },
+    // Both of these existed as routes with nothing linking to them, so the only
+    // way to reach the section editor or the schedule was to know the URL —
+    // which meant sectional timing and slot times were, in practice, unreachable.
+    { path: "/admin/sections", icon: FiLayers, label: "Sections" },
+    { path: "/admin/slots", icon: FiClock, label: "Schedule" },
     { path: "/admin/students", icon: FiUsers, label: "Students" },
     { path: "/admin/students/add", icon: FiUserPlus, label: "Add Candidates" },
     { path: "/admin/questions/import", icon: FiUploadCloud, label: "Import Paper" },

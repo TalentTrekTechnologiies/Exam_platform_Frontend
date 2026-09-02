@@ -1,12 +1,13 @@
 // src/components/Layout/MobileNav.jsx
 import React from "react";
 import { NavLink } from "react-router-dom";
-import { FiHome, FiBook, FiUsers, FiSettings, FiBarChart2, FiX } from "react-icons/fi";
+import { FiHome, FiBook, FiUsers, FiSettings, FiBarChart2, FiClock, FiX } from "react-icons/fi";
 
 const MobileNav = ({ isOpen, onClose }) => {
   const navItems = [
     { path: "/admin/dashboard", icon: FiHome, label: "Dashboard" },
     { path: "/admin/questions", icon: FiBook, label: "Questions" },
+    { path: "/admin/slots", icon: FiClock, label: "Schedule" },
     { path: "/admin/students", icon: FiUsers, label: "Students" },
     { path: "/admin/settings", icon: FiSettings, label: "Settings" },
     { path: "/admin/reports", icon: FiBarChart2, label: "Reports" },
