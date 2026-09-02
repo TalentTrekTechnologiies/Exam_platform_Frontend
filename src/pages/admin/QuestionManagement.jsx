@@ -393,6 +393,12 @@ const QuestionManagement = () => {
 
   const openEditor = async (q) => {
     setFormError("");
+    // The reference solution and its result belong to the question that was
+    // open, not to this screen. Left standing, Q1's solution greeted whoever
+    // opened Q2 and could be run against Q2's cases without anybody noticing
+    // it was the wrong program.
+    setReference({ language: "python", sourceCode: "" });
+    setVerifyResult(null);
     if (q) {
       const coding = q.type === "CODING";
       setEditing(q);
