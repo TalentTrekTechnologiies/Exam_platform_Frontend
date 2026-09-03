@@ -187,7 +187,7 @@ const Exam = () => {
   const {
     attemptId, questions, answers, remainingSeconds, status, error, syncState,
     strikes, recordViolation, saveAnswer, clearAnswer, toggleMarkForReview,
-    sectionClock,
+    sectionClock, codeByQuestion, noteCodeSubmitted,
     markVisited, submitExam, setExpiryHandler,
     statusOf, sections, counts, markedForReview,
   } = useExam();
@@ -204,15 +204,7 @@ const Exam = () => {
   const [submitting, setSubmitting] = useState(false);
   const [cameraStatus, setCameraStatus] = useState(null);
 
-  /**
-   * The code a candidate has submitted, per question, for this page's lifetime.
-   *
-   * The server holds the authoritative copy — it was stored when they pressed
-   * Submit — but the paper does not re-fetch it when they navigate back, and
-   * finding an empty editor where your solution was is indistinguishable from
-   * having lost it.
-   */
-  const [codeByQuestion, setCodeByQuestion] = useState({});
+
 
   const started = useRef(false);
   const submittingRef = useRef(false);
@@ -941,9 +933,9 @@ const Exam = () => {
               onAnswer={(option) => saveAnswer(currentQuestion.id, option)}
               disabled={status !== "READY"}
               attemptId={attemptId}
-              savedCode={codeByQuestion[currentQuestion?.id]}
+              savedCode={codeByQuestion[String(currentQuestion?.id)]}
               onCodeSaved={(saved) =>
-                setCodeByQuestion((prev) => ({ ...prev, [currentQuestion.id]: saved }))}
+                noteCodeSubmitted(currentQuestion.id, saved.language, saved.sourceCode)}
             />
           </div>
 

@@ -112,6 +112,15 @@ export const ExamProvider = ({ children }) => {
    */
   const [sectionClock, setSectionClock] = useState(null);
 
+  /**
+   * The program this candidate has submitted for each coding question.
+   *
+   * Loaded with the paper, because neither the paper nor the saved responses
+   * carry code: a candidate who moved on and came back found an empty editor
+   * and no reason to believe their work still existed.
+   */
+  const [codeByQuestion, setCodeByQuestion] = useState({});
+
   // Answers that haven't reached the server yet: { [questionId]: option }
   const pending = useRef({});
   // Read back synchronously the moment a violation is recorded, which a
@@ -130,16 +139,20 @@ export const ExamProvider = ({ children }) => {
     setError(null);
 
     try {
-      const [paper, saved, clock] = await Promise.all([
+      const [paper, saved, clock, code] = await Promise.all([
         examApi.paper(id),
         examApi.responses(id),
         examApi.remaining(id),
+        // A paper with no coding questions simply gets an empty object; this
+        // must never be the reason an exam fails to load.
+        examApi.myCode(id).catch(() => ({})),
       ]);
 
       setQuestions(Array.isArray(paper) ? paper : []);
       // The server's saved responses are authoritative — this is what makes a
       // mid-exam refresh or a browser crash recoverable.
       setAnswers(saved || {});
+      setCodeByQuestion(code || {});
       setRemainingSeconds(clock.remainingSeconds);
       setMarkedForReview(readJson(MARKED_KEY(id), {}));
       // Anything already answered has self-evidently been visited, so a resumed
@@ -332,6 +345,24 @@ export const ExamProvider = ({ children }) => {
     if (status === "READY" && remainingSeconds === 0 && onExpiry.current) onExpiry.current();
   }, [remainingSeconds, status]);
 
+  /**
+   * Records a submitted program in the paper's own state.
+   *
+   * The server already stored it — this is what makes the palette turn green
+   * and the editor still hold the code after moving away and back. Without it
+   * a candidate who submitted correctly saw a question that still looked
+   * unanswered, which during an exam reads as work that did not save.
+   */
+  const noteCodeSubmitted = useCallback((questionId, language, sourceCode) => {
+    setCodeByQuestion((prev) => ({
+      ...prev,
+      [String(questionId)]: { ...(prev[String(questionId)] || {}), sourceCode, language },
+    }));
+    // The palette keys off the answers map, and the server records the
+    // language in the same field an option letter would occupy.
+    setAnswers((prev) => ({ ...prev, [questionId]: language || "code" }));
+  }, []);
+
   const setExpiryHandler = useCallback((fn) => { onExpiry.current = fn; }, []);
 
   // ── Submit ────────────────────────────────────────────────────────────────
@@ -430,6 +461,7 @@ export const ExamProvider = ({ children }) => {
         remainingSeconds, status, error, syncState,
         violations, strikes, recordViolation,
         sectionClock,
+        codeByQuestion, noteCodeSubmitted,
         saveAnswer, clearAnswer, toggleMarkForReview, markVisited,
         submitExam, setExpiryHandler,
         statusOf, sections, counts, answeredCount, unansweredCount,

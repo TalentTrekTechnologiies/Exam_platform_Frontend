@@ -322,4 +322,7 @@ export const examApi = {
   submitCode: (attemptId, questionId, language, sourceCode) =>
     api.post("/student/code/submit", { attemptId, questionId, language, sourceCode }),
   codeLanguages: (questionId) => api.get(`/student/code/languages/${questionId}`),
+  // Everything this candidate has submitted, so returning to a question shows
+  // the program they wrote rather than an empty editor.
+  myCode: (attemptId) => api.get(`/student/code/mine/${attemptId}`),
 };
