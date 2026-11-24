@@ -147,6 +147,7 @@ const Verification = () => {
                     <span className="block truncate font-semibold text-slate-900">{c.examTitle}</span>
                     <span className="mt-0.5 block text-xs text-slate-500">
                       {c.duration ? `${c.duration} minutes` : ""}
+                      {c.opensAt ? ` · opens ${String(c.opensAt).replace("T", " ").slice(0, 16)}` : ""}
                       {c.closesAt ? ` · closes ${String(c.closesAt).replace("T", " ").slice(0, 16)}` : ""}
                     </span>
                   </span>

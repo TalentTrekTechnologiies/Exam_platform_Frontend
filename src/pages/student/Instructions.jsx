@@ -1,12 +1,108 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiArrowRight, FiAlertCircle } from "react-icons/fi";
+import { FiArrowRight, FiAlertCircle, FiClock, FiVolume2 } from "react-icons/fi";
 import { useExam } from "../../contexts/ExamContext";
 import { examApi, api, uploadUrl } from "../../lib/api";
 import StatusLegend from "../../components/Exam/StatusLegend";
 
 const initialsOf = (name = "") =>
   name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "—";
+
+/**
+ * A server LocalDateTime ("2026-11-24T12:00:00.123456") as epoch ms, read in
+ * this machine's zone. Parsed by hand because browsers disagree on more than
+ * three fractional digits. Only ever used in differences between two server
+ * times, so the zone cancels out.
+ */
+const toMs = (v) => {
+  if (!v) return NaN;
+  if (Array.isArray(v)) {
+    const [y, mo, d, h = 0, mi = 0, sec = 0] = v;
+    return new Date(y, mo - 1, d, h, mi, sec).getTime();
+  }
+  const m = String(v).match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?/);
+  if (!m) return NaN;
+  return new Date(+m[1], m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0), +(m[7] || "0").padEnd(3, "0")).getTime();
+};
+
+const clockText = (ms) => {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const pad = (n) => String(n).padStart(2, "0");
+  return h ? `${h}:${pad(m)}:${pad(sec)}` : `${pad(m)}:${pad(sec)}`;
+};
+
+/**
+ * The college's introduction, played once as the candidate enters the lobby.
+ *
+ * It cannot be skipped, but it can never trap anyone either: a file that fails
+ * to load, or never starts playing, hands over to the rules on its own. Browsers
+ * refuse sound on a page nobody has clicked yet (a refreshed lobby), so it then
+ * plays muted with a button to bring the sound back.
+ */
+const IntroVideo = ({ src, collegeName, onDone }) => {
+  const ref = useRef(null);
+  const [muted, setMuted] = useState(false);
+  const [left, setLeft] = useState(null);
+  const finished = useRef(false);
+
+  const finish = useCallback(() => {
+    if (finished.current) return;
+    finished.current = true;
+    onDone();
+  }, [onDone]);
+
+  useEffect(() => {
+    const video = ref.current;
+    if (!video) return;
+    video.play().catch(() => {
+      video.muted = true;
+      setMuted(true);
+      video.play().catch(finish);
+    });
+    // A lab connection that cannot fetch the file must not hold anyone here.
+    const giveUp = setTimeout(() => { if (video.paused) finish(); }, 20000);
+    return () => clearTimeout(giveUp);
+  }, [finish]);
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-chrome px-6">
+      <p className="mb-4 text-sm font-medium text-gray-300">
+        A message from {collegeName || "your institution"}
+      </p>
+      <video
+        ref={ref}
+        src={src}
+        playsInline
+        disablePictureInPicture
+        controlsList="nodownload nofullscreen noremoteplayback"
+        onContextMenu={(e) => e.preventDefault()}
+        onTimeUpdate={(e) => {
+          const v = e.currentTarget;
+          if (Number.isFinite(v.duration)) setLeft(v.duration - v.currentTime);
+        }}
+        onEnded={finish}
+        onError={finish}
+        className="max-h-[75vh] w-full max-w-5xl rounded-exam bg-black shadow-2xl"
+      />
+      <div className="mt-4 flex items-center gap-4 text-sm text-gray-400">
+        {muted && (
+          <button
+            onClick={() => { ref.current.muted = false; setMuted(false); }}
+            className="flex items-center gap-2 rounded-exam bg-white px-4 py-2 font-semibold text-chrome"
+          >
+            <FiVolume2 /> Turn sound on
+          </button>
+        )}
+        <span className="tabular">
+          {left != null ? `The instructions follow in ${clockText(left * 1000)}` : "Loading…"}
+        </span>
+      </div>
+    </div>
+  );
+};
 
 const RULES = [
   "The timer runs on our server. Closing the browser, losing power or losing your connection does not stop it.",
@@ -27,10 +123,23 @@ const Instructions = () => {
   const [agreed, setAgreed] = useState(false);
   const [starting, setStarting] = useState(false);
   const [error, setError] = useState("");
-  const [showVideo, setShowVideo] = useState(false);
+
+  // When the paper opens, on this machine's clock. Computed from the gap
+  // between the server's opening time and the server's "now", so a candidate's
+  // wrong system clock moves nothing. Null means open already (or no sitting).
+  const [openAt, setOpenAt] = useState(null);
+  const [now, setNow] = useState(() => Date.now());
 
   const candidateName = localStorage.getItem("studentName") || "Candidate";
   const hallTicket = localStorage.getItem("hallTicket") || "";
+
+  // The introduction plays once per sign-in, not again on every refresh.
+  const introKey = `introSeen:${localStorage.getItem("student_examId")}:${localStorage.getItem("studentId")}`;
+  const [introDone, setIntroDone] = useState(() => sessionStorage.getItem(introKey) === "1");
+  const endIntro = useCallback(() => {
+    sessionStorage.setItem(introKey, "1");
+    setIntroDone(true);
+  }, [introKey]);
 
   useEffect(() => {
     const examId = localStorage.getItem("student_examId");
@@ -45,32 +154,74 @@ const Instructions = () => {
       // must not block a candidate from starting.
       api.get(`/student/exam-structure/${examId}`).catch(() => null),
     ])
-      .then(([info, shape]) => { setExam({ id: examId, ...info }); setStructure(shape); })
+      .then(([info, shape]) => {
+        setExam({ id: examId, ...info });
+        setStructure(shape);
+        const gap = toMs(info.opensAt) - toMs(info.serverTime);
+        setOpenAt(Number.isFinite(gap) && gap > 0 ? Date.now() + gap : null);
+      })
       .catch((e) => setError(e.message || "Could not load the exam details."))
       .finally(() => setLoading(false));
   }, [navigate]);
 
-  const startExam = async () => {
-    if (starting) return;
+  const isOpen = openAt == null || now >= openAt;
+
+  // The lobby clock. Stops ticking once the paper is open.
+  useEffect(() => {
+    if (openAt == null) return;
+    const id = setInterval(() => {
+      const t = Date.now();
+      setNow(t);
+      if (t >= openAt) clearInterval(id);
+    }, 250);
+    return () => clearInterval(id);
+  }, [openAt]);
+
+  const startingRef = useRef(false);
+  const startExam = useCallback(async () => {
+    if (startingRef.current || !exam) return;
+    startingRef.current = true;
     setStarting(true);
     setError("");
 
-    try {
-      const data = await examApi.start(Number(localStorage.getItem("studentId")), Number(exam.id));
-      beginAttempt(data.attemptId);
-      navigate("/exam", { replace: true });
-    } catch (e) {
-      setShowVideo(false);
-      setError(e.message || "Could not start the exam. Contact your invigilator.");
-      setStarting(false);
+    // In the first seconds after the start, the server may still be a beat
+    // behind this countdown; that is a wait, not an error to show anyone.
+    for (let tries = 0; ; tries++) {
+      try {
+        const data = await examApi.start(Number(localStorage.getItem("studentId")), Number(exam.id));
+        beginAttempt(data.attemptId);
+        navigate("/exam", { replace: true });
+        return;
+      } catch (e) {
+        if (e.status === 409 && tries < 10) {
+          await new Promise((r) => setTimeout(r, 2000));
+          continue;
+        }
+        setError(e.message || "Could not start the exam. Contact your invigilator.");
+        startingRef.current = false;
+        setStarting(false);
+        return;
+      }
     }
-  };
+  }, [exam, beginAttempt, navigate]);
 
-  const handleBegin = () => {
-    if (!exam) return;
-    if (exam.introVideo) setShowVideo(true);
-    else startExam();
-  };
+  // A candidate who has read and agreed before the start goes straight in when
+  // it arrives. Spread over a few seconds so a whole lab does not press Start
+  // in the same instant. Decided once, at the opening moment: ticking the box
+  // later is not a request to start, the Begin button is.
+  const waitedForOpen = useRef(false);
+  const readyRef = useRef(false);
+  readyRef.current = agreed && introDone;
+  const startRef = useRef(startExam);
+  startRef.current = startExam;
+  useEffect(() => {
+    if (!isOpen) { waitedForOpen.current = true; return; }
+    if (!waitedForOpen.current) return;
+    waitedForOpen.current = false;
+    if (!readyRef.current) return;
+    const id = setTimeout(() => startRef.current(), Math.random() * 3000);
+    return () => clearTimeout(id);
+  }, [isOpen]);
 
   if (loading) {
     return (
@@ -80,6 +231,10 @@ const Instructions = () => {
     );
   }
 
+  const openTimeText = openAt != null
+    ? new Date(toMs(exam?.opensAt)).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : "";
+
   const marking =
     structure?.marksPerQuestion != null
       ? `+${structure.marksPerQuestion}${structure.negativePerQuestion ? ` / −${structure.negativePerQuestion}` : ""}`
@@ -88,18 +243,8 @@ const Instructions = () => {
   return (
     <div className="min-h-screen bg-gray-50" onContextMenu={(e) => e.preventDefault()}>
 
-      {showVideo && (
-        <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-chrome">
-          <video
-            src={uploadUrl(exam.introVideo)}
-            autoPlay
-            onEnded={() => { setShowVideo(false); startExam(); }}
-            // A missing or unplayable video must never trap the candidate.
-            onError={() => { setShowVideo(false); startExam(); }}
-            className="w-[80%] rounded-exam shadow-2xl"
-          />
-          <p className="mt-4 text-sm text-gray-400">Please watch this briefing before starting.</p>
-        </div>
+      {exam?.introVideo && !introDone && (
+        <IntroVideo src={uploadUrl(exam.introVideo)} collegeName={exam.collegeName} onDone={endIntro} />
       )}
 
       <header className="flex h-14 items-center gap-3 bg-chrome px-6">
@@ -120,6 +265,25 @@ const Instructions = () => {
       </header>
 
       <main className="mx-auto max-w-4xl px-6 py-10">
+
+        {/* The lobby: in early, reading, with the paper on its way. */}
+        {openAt != null && !isOpen && (
+          <section className="mb-8 flex items-center gap-5 rounded-exam border border-primary-200 bg-primary-50 px-6 py-5">
+            <FiClock className="shrink-0 text-2xl text-primary-700" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-gray-900">
+                You are signed in. The exam opens at {openTimeText}.
+              </p>
+              <p className="mt-0.5 text-sm text-gray-600">
+                Read the instructions below while you wait. Your time does not start until the exam opens.
+              </p>
+            </div>
+            <div className="shrink-0 text-right">
+              <p className="exam-label">Opens in</p>
+              <p className="text-2xl font-semibold tabular text-gray-900">{clockText(openAt - now)}</p>
+            </div>
+          </section>
+        )}
 
         {/* Candidate */}
         <section className="mb-8 flex items-center gap-4 rounded-exam border border-gray-200 bg-white px-6 py-5">
@@ -218,17 +382,23 @@ const Instructions = () => {
           </label>
 
           <button
-            onClick={handleBegin}
-            disabled={!agreed || starting || !exam}
+            onClick={startExam}
+            disabled={!agreed || starting || !exam || !isOpen}
             className="shrink-0 rounded-exam bg-white px-8 py-3 text-sm font-semibold text-chrome
                        transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-30"
           >
-            {starting ? "Starting…" : <>Begin exam <FiArrowRight className="ml-1 inline" /></>}
+            {starting
+              ? "Starting…"
+              : !isOpen
+                ? <span className="tabular">Opens in {clockText(openAt - now)}</span>
+                : <>Begin exam <FiArrowRight className="ml-1 inline" /></>}
           </button>
         </section>
 
         <p className="mt-4 text-center text-xs text-gray-400">
-          Your time starts the moment you begin.
+          {!isOpen
+            ? `Tick the box and the exam will open by itself at ${openTimeText}.`
+            : "Your time starts the moment you begin."}
         </p>
       </main>
     </div>

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from "react";
 import Layout from "../../components/Layout/Layout";
 import { API_BASE, api, uploadUrl, readAdmin, appPath } from "../../lib/api";
-import { FiImage, FiCheck, FiAlertTriangle, FiVideo, FiMic } from "react-icons/fi";
+import { FiImage, FiCheck, FiAlertTriangle, FiVideo, FiMic, FiFilm } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
 
 /**
@@ -18,6 +18,10 @@ import ExamPicker from "../../components/Admin/ExamPicker";
  * be changed: candidates got no self-view and the invigilator's camera wall
  * stayed empty for the life of that exam, with nothing anywhere to turn it on.
  */
+
+/** Matches the server's cap, which sits under the 30 MB nginx accepts. */
+const VIDEO_LIMIT_MB = 25;
+const TOO_LARGE = `That video is larger than ${VIDEO_LIMIT_MB} MB. Export it smaller (720p is plenty) and try again.`;
 
 /** One proctoring switch, saved the moment it is flipped. */
 const Toggle = ({ icon: Icon, label, hint, checked, disabled, onChange }) => (
@@ -153,6 +157,59 @@ const Settings = () => {
     }
   };
 
+  /**
+   * The college's introduction video, played to every candidate as they enter
+   * the lobby before an exam. Raw fetch rather than api.put: a 30 MB file on a
+   * college line can take longer than the client's usual 15-second timeout.
+   */
+  const [introVideo, setIntroVideo] = useState(null);
+  const [videoBusy, setVideoBusy] = useState(false);
+
+  useEffect(() => {
+    api.get("/admin/profile/intro-video")
+      .then((r) => setIntroVideo(r?.introVideo || null))
+      .catch(() => {});
+  }, []);
+
+  const uploadVideo = async (file) => {
+    if (!file) return;
+    if (file.size > VIDEO_LIMIT_MB * 1024 * 1024) {
+      setNotice({ tone: "error", text: TOO_LARGE });
+      return;
+    }
+    setVideoBusy(true);
+    setNotice(null);
+    try {
+      const form = new FormData();
+      form.append("video", file);
+      const res = await fetch(`${API_BASE}/admin/profile/intro-video`, { method: "PUT", body: form });
+      const body = await res.json().catch(() => ({}));
+      // 413 comes from nginx in front of the app, as an HTML page with no message.
+      if (res.status === 413) { setNotice({ tone: "error", text: TOO_LARGE }); return; }
+      if (!res.ok) { setNotice({ tone: "error", text: body.message || "That video could not be saved." }); return; }
+      setIntroVideo(body.introVideo || null);
+      setNotice({ tone: "ok", text: "Video saved — candidates will watch it as they enter, before every exam." });
+    } catch {
+      setNotice({ tone: "error", text: "Could not reach the server." });
+    } finally {
+      setVideoBusy(false);
+    }
+  };
+
+  const removeVideo = async () => {
+    setVideoBusy(true);
+    setNotice(null);
+    try {
+      await api.del("/admin/profile/intro-video");
+      setIntroVideo(null);
+      setNotice({ tone: "ok", text: "Video removed. Candidates go straight to the instructions." });
+    } catch (e) {
+      setNotice({ tone: "error", text: e.message || "That video could not be removed." });
+    } finally {
+      setVideoBusy(false);
+    }
+  };
+
   const saveName = async () => {
     if (!collegeName.trim()) { setNotice({ tone: "error", text: "Institution name cannot be empty." }); return; }
     setSaving(true);
@@ -208,6 +265,51 @@ const Settings = () => {
               </p>
             </div>
           </div>
+        </div>
+
+        <div className="mt-5 rounded-exam border border-gray-200 bg-white p-6">
+          <label className="exam-label mb-1 block">Introduction video</label>
+          <p className="mb-4 text-sm text-gray-600">
+            Candidates can sign in a little before the exam starts. This plays first as they
+            enter — your college's advertisement or welcome, 30 seconds to a minute — then they
+            read the instructions, and the paper opens at its start time. It cannot be skipped.
+          </p>
+
+          {introVideo && (
+            <video
+              src={uploadUrl(introVideo)}
+              controls
+              preload="metadata"
+              className="mb-4 max-h-64 w-full rounded-exam bg-black"
+            />
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <label className={`exam-action-primary relative cursor-pointer ${videoBusy ? "pointer-events-none opacity-60" : ""}`}>
+              <FiFilm className="mr-1.5 inline" />
+              {videoBusy ? "Uploading…" : introVideo ? "Replace video" : "Upload video"}
+              <input
+                type="file"
+                accept="video/mp4,video/webm,video/ogg,video/quicktime"
+                className="absolute inset-0 cursor-pointer opacity-0"
+                onChange={(e) => { uploadVideo(e.target.files?.[0]); e.target.value = ""; }}
+                disabled={videoBusy}
+              />
+            </label>
+            {introVideo && (
+              <button
+                onClick={removeVideo}
+                disabled={videoBusy}
+                className="text-sm font-semibold text-gray-500 hover:text-red-700 disabled:opacity-40"
+              >
+                Remove
+              </button>
+            )}
+          </div>
+          <p className="mt-3 text-xs text-gray-500">
+            MP4, up to {VIDEO_LIMIT_MB} MB. Every candidate downloads it in the same few minutes, so keep it
+            small — a one-minute 720p video is usually under 10 MB.
+          </p>
         </div>
 
         <div className="mt-5 rounded-exam border border-gray-200 bg-white p-6">
