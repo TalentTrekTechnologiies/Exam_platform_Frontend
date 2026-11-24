@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
-import { API_BASE, api } from "../../lib/api";
+import { API_BASE, api, ENROL_OPTS, enrolError } from "../../lib/api";
 import {
   FiUploadCloud, FiAlertTriangle, FiCheck, FiHash, FiUsers, FiTrash2, FiArrowRight,
 } from "react-icons/fi";
@@ -146,11 +146,11 @@ const AddCandidates = () => {
         .map((r) => ({ hallTicket: r.hallTicket.trim(), name: r.name.trim() }));
       const report = await api.post("/admin/students/import/confirm", {
         examId: Number(examId), slotId: Number(slotId), candidates: clean,
-      });
+      }, ENROL_OPTS);
       setSaved(report);
       reset();
     } catch (e) {
-      setError(e.message || "Could not enrol these candidates.");
+      setError(enrolError(e, "Could not enrol these candidates."));
     } finally {
       setBusy(false);
     }
@@ -165,10 +165,10 @@ const AddCandidates = () => {
         examId: Number(examId), slotId: Number(slotId),
         prefix, padding: Number(padding),
         names: names.split(/\r?\n/).map((n) => n.trim()).filter(Boolean),
-      });
+      }, ENROL_OPTS);
       setIssued(report);
     } catch (e) {
-      setError(e.message || "Could not issue hall tickets.");
+      setError(enrolError(e, "Could not issue hall tickets."));
     } finally {
       setBusy(false);
     }

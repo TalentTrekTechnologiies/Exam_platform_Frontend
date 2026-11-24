@@ -216,6 +216,19 @@ export const api = {
 };
 
 /**
+ * Enrolling a batch on a slow college line can take well over the usual 15
+ * seconds. Giving up early reported a failure for a batch the server went on to
+ * save, so the admin pressed Add again — which is how rosters doubled.
+ */
+export const ENROL_OPTS = { timeoutMs: 120000 };
+
+/** The message for a failed enrolment, saying plainly that retrying is safe. */
+export const enrolError = (e, fallback) =>
+  e instanceof ApiError && e.status === 0
+    ? "The connection dropped before the server answered. It may already have saved them — check the list below. Pressing Add again is safe: nobody is enrolled twice."
+    : e?.message || fallback;
+
+/**
  * Attaches the bearer token to every call to our own API, including the raw
  * `fetch` calls throughout the admin pages.
  *

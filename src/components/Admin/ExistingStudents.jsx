@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
-import { api } from "../../lib/api";
+import { api, ENROL_OPTS, enrolError } from "../../lib/api";
 import { FiSearch, FiCheck, FiAlertTriangle, FiUsers } from "react-icons/fi";
 
 /**
@@ -65,7 +65,7 @@ export default function ExistingStudents({ examId, slotId, onAssigned }) {
     try {
       const report = await api.post("/admin/students/assign", {
         examId: Number(examId), slotId: Number(slotId), studentIds: [...picked],
-      });
+      }, ENROL_OPTS);
       setNotice({
         tone: report.errors?.length ? "warn" : "ok",
         text: report.summary,
@@ -75,7 +75,7 @@ export default function ExistingStudents({ examId, slotId, onAssigned }) {
       await load();                 // their exam list has changed
       onAssigned?.(report);
     } catch (e) {
-      setNotice({ tone: "error", text: e.message || "Those candidates could not be assigned." });
+      setNotice({ tone: "error", text: enrolError(e, "Those candidates could not be assigned.") });
     } finally {
       setBusy(false);
     }
