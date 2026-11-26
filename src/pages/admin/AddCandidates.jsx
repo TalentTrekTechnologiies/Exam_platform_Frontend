@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate, Link } from "react-router-dom";
 import Layout from "../../components/Layout/Layout";
 import { API_BASE, api, ENROL_OPTS, enrolError } from "../../lib/api";
+import { sittingLabel } from "../../lib/buffer";
 import {
   FiUploadCloud, FiAlertTriangle, FiCheck, FiHash, FiUsers, FiTrash2, FiArrowRight,
 } from "react-icons/fi";
@@ -45,6 +46,7 @@ const AddCandidates = () => {
   const fileRef = useRef(null);
 
   // Generate route
+  const [duration, setDuration] = useState(null);
   const [prefix, setPrefix] = useState("");
   const [padding, setPadding] = useState(3);
 
@@ -69,6 +71,8 @@ const AddCandidates = () => {
     try {
       const list = await api.get(`/admin/slot/${examId}`);
       setSlots(list);
+      // For labelling each sitting with the exam's own span, not its entry window.
+      api.get(`/admin/exam/${examId}`).then((e) => setDuration(e?.duration ?? null)).catch(() => {});
       // Pre-select when there is only one — the common case, and one less
       // decision for someone who just wants to add their students.
       if (list.length === 1) setSlotId(String(list[0].id));
@@ -253,7 +257,7 @@ const AddCandidates = () => {
             <option value="">Choose a slot…</option>
             {slots.map((s) => (
               <option key={s.id} value={s.id}>
-                {new Date(s.startTime).toLocaleString()} — {new Date(s.endTime).toLocaleTimeString()}
+                {sittingLabel(s, duration)}
               </option>
             ))}
           </select>
@@ -577,7 +581,7 @@ const AddCandidates = () => {
 
       {examId && (
         <div className="mt-8">
-          <SittingRoster examId={examId} slots={slots} refreshKey={saved} />
+          <SittingRoster examId={examId} slots={slots} duration={duration} refreshKey={saved} />
         </div>
       )}
     </Layout>

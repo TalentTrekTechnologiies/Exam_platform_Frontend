@@ -4,7 +4,7 @@ import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiPlus, FiTrash2, FiClock, FiAlertTriangle, FiArrowRight, FiEdit3 } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
-import { defaultBuffer, effectiveBuffer, lastEntry, minutesBetween, timeOf } from "../../lib/buffer";
+import { defaultBuffer, effectiveBuffer, lastEntry, minutesBetween, timeOf, sittingLabel } from "../../lib/buffer";
 
 /**
  * Time windows candidates can sit this exam in.
@@ -234,10 +234,9 @@ const Slots = () => {
                 return (
                   <div key={s.id} className="flex items-center justify-between px-5 py-4">
                     <div className="text-sm">
-                      <span className="font-semibold text-gray-900">{new Date(s.startTime).toLocaleString()}</span>
+                      <span className="font-semibold text-gray-900">{sittingLabel(s, duration)}</span>
                       <span className="ml-2 text-gray-500">
-                        · late entry until {new Date(s.endTime).toLocaleString()}
-                        {" "}({minutesBetween(s.startTime, s.endTime)} min buffer)
+                        ({minutesBetween(s.startTime, s.endTime)} min buffer)
                       </span>
                       {/* Said plainly, because a closed window is the usual
                           reason a candidate cannot sign in and the usual reason

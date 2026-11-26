@@ -2,6 +2,8 @@ import React from "react";
 import { FiCalendar, FiClock, FiTrash2, FiSunrise, FiSun, FiSunset, FiUserPlus } from "react-icons/fi";
 import { defaultBuffer, effectiveBuffer, lastEntry, timeOf } from "../../lib/buffer";
 
+const plus = (stamp, minutes) => timeOf(new Date(new Date(stamp).getTime() + minutes * 60000));
+
 /**
  * When one batch sits.
  *
@@ -111,7 +113,8 @@ export default function SittingPicker({ index, sitting, duration, onChange, onRe
           {!valid
             ? "Buffer must be at least 1 minute"
             : until
-              ? `Late entry until ${timeOf(until)}`
+              ? `Exam ${timeOf(`${date}T${from}`)} – ${plus(`${date}T${from}`, Number(duration) || 0)}`
+                + ` · entry until ${timeOf(until)}`
               : `${minutes} min late entry${buffer === "" ? " (10% of duration)" : ""}`}
         </span>
       </div>

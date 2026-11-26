@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { api } from "../../lib/api";
+import { sittingLabel } from "../../lib/buffer";
 import { FiUsers, FiTrash2, FiAlertTriangle, FiSearch } from "react-icons/fi";
 
 /**
@@ -18,10 +19,8 @@ import { FiUsers, FiTrash2, FiAlertTriangle, FiSearch } from "react-icons/fi";
 const time = (iso) =>
   iso ? new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "";
 
-const day = (iso) =>
-  iso ? new Date(iso).toLocaleDateString([], { day: "numeric", month: "short" }) : "";
 
-export default function SittingRoster({ examId, slots = [], refreshKey }) {
+export default function SittingRoster({ examId, slots = [], duration, refreshKey }) {
   const [rows, setRows] = useState(null);
   const [started, setStarted] = useState(() => new Set());
   const [search, setSearch] = useState("");
@@ -52,7 +51,7 @@ export default function SittingRoster({ examId, slots = [], refreshKey }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [examId, refreshKey]);
 
-  const label = (s) => `${day(s.startTime)} · ${time(s.startTime)} – ${time(s.endTime)}`;
+  const label = (s) => sittingLabel(s, duration);
 
   const shown = useMemo(() => {
     const needle = search.trim().toLowerCase();

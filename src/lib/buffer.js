@@ -37,3 +37,21 @@ export const minutesBetween = (fromStamp, toStamp) =>
 /** "5:06 PM" for a stamp. */
 export const timeOf = (stamp) =>
   new Date(stamp).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+
+/**
+ * How a sitting reads to staff: "26 Nov · 10:30 PM – 10:40 PM · entry until 10:35 PM".
+ *
+ * A slot stores its start and its last entry, and showing those two as
+ * "10:30 – 10:35" read as a five-minute exam. The exam's own span is the
+ * start plus the paper's duration; the last entry is said as what it is.
+ * Without a duration, the start and the last entry are labelled plainly.
+ */
+export const sittingLabel = (slot, durationMinutes) => {
+  if (!slot?.startTime) return "";
+  const day = new Date(slot.startTime).toLocaleDateString([], { day: "numeric", month: "short" });
+  const minutes = Number(durationMinutes);
+  const span = minutes > 0
+    ? `${timeOf(slot.startTime)} – ${timeOf(new Date(new Date(slot.startTime).getTime() + minutes * 60000))}`
+    : `starts ${timeOf(slot.startTime)}`;
+  return `${day} · ${span}${slot.endTime ? ` · entry until ${timeOf(slot.endTime)}` : ""}`;
+};
