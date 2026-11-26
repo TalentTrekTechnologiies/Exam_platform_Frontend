@@ -266,7 +266,7 @@ export function installAuthFetch() {
     // under /online, a bare "/verify" would leave the app completely and land
     // on the host site's page, so an expired session would look to a candidate
     // like the exam had vanished.
-    if (response.status === 401 && !path.includes("/login") && !path.includes("/validate")) {
+    if (response.status === 401 && !path.includes("/login") && !path.includes("/validate") && !path.includes("/lookup")) {
       if (path.includes("/student/")) {
         tokens.clearStudent();
         const to = appPath("/verify");
@@ -295,6 +295,10 @@ export const examApi = {
   // colleges resolve to the right candidate.
   // examId disambiguates when a candidate has more than one sitting open at
   // once; omitted on the first call, supplied after they have chosen.
+  // The name that goes with a hall ticket, for the candidate to confirm.
+  // Answers only while that candidate could sign in; refuses as sign-in would.
+  lookup: (hallTicket) =>
+    api.post("/student/lookup", { hallTicket, institutionCode: INSTITUTION_CODE }),
   validate: (hallTicket, name, examId) =>
     api.post("/student/validate", {
       hallTicket,

@@ -1,14 +1,25 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
-import { FiBookOpen, FiAlertCircle, FiArrowRight } from "react-icons/fi";
+import { FiAlertCircle, FiArrowRight, FiUser } from "react-icons/fi";
 import { examApi, clearStudentSession, uploadUrl, INSTITUTION_CODE, PLATFORM_NAME } from "../../lib/api";
 import SignInFrame from "../../components/Layout/SignInFrame";
 
 const Verification = () => {
   const navigate = useNavigate();
   const { login } = useAuth();
-  const [formData, setFormData] = useState({ hallTicket: "", name: "" });
+  const [formData, setFormData] = useState({ hallTicket: "" });
+  /*
+   * Who the hall ticket belongs to, once looked up: the candidate confirms
+   * their name instead of typing it. Typed names were the commonest reason a
+   * real candidate could not get in -- an extra space, initials in another
+   * order, a spelling unlike the college's records.
+   */
+  const [found, setFound] = useState(null);
+  const [lookingUp, setLookingUp] = useState(false);
+  const [notMe, setNotMe] = useState(false);
+  const confirmRef = useRef(null);
+  const lookupSeq = useRef(0);
   const [isLoading, setIsLoading] = useState(false);
   const [apiError, setApiError] = useState("");
   const [institution, setInstitution] = useState(null);
@@ -33,18 +44,52 @@ const Verification = () => {
    */
   const handleSubmit = (e) => {
     e.preventDefault();
-    signIn(null);
+    if (found) signIn(null);
+    else lookup(formData.hallTicket);
   };
+
+  /** Finds the name for a hall ticket. Only the latest request counts. */
+  const lookup = async (raw) => {
+    const hallTicket = (raw || "").trim();
+    if (!hallTicket) { setApiError("Enter your hall ticket number."); return; }
+    const seq = ++lookupSeq.current;
+    setLookingUp(true);
+    setApiError("");
+    setNotMe(false);
+    try {
+      const data = await examApi.lookup(hallTicket);
+      if (seq !== lookupSeq.current) return;
+      setFound(data);
+    } catch (error) {
+      if (seq !== lookupSeq.current) return;
+      setFound(null);
+      // Not found, not open yet, closed, already submitted: the server says which.
+      setApiError(error.message || "We could not find that hall ticket number.");
+    } finally {
+      if (seq === lookupSeq.current) setLookingUp(false);
+    }
+  };
+
+  // Looked up a moment after typing stops, so the name simply appears.
+  useEffect(() => {
+    const value = formData.hallTicket.trim();
+    if (found || value.length < 4) return;
+    const id = setTimeout(() => lookup(value), 700);
+    return () => clearTimeout(id);
+  }, [formData.hallTicket]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // The confirm button takes focus, so Enter signs in.
+  useEffect(() => { if (found) confirmRef.current?.focus(); }, [found]);
 
   const signIn = async (examId) => {
     setIsLoading(true);
     setApiError("");
 
-    const hallTicket = formData.hallTicket.trim();
-    const name = formData.name.trim();
+    const hallTicket = (found?.hallTicket || formData.hallTicket).trim();
+    const name = (found?.name || "").trim();
 
     if (!hallTicket || !name) {
-      setApiError("Enter both your hall ticket number and your name.");
+      setApiError("Enter your hall ticket number.");
       setIsLoading(false);
       return;
     }
@@ -126,7 +171,7 @@ const Verification = () => {
               Candidate sign in
             </h1>
             <p className="mt-1 text-sm text-slate-500">
-              Enter the details exactly as printed on your hall ticket.
+              Enter your hall ticket number. Your name will appear — check it, then sign in.
             </p>
           </div>
 
@@ -196,37 +241,67 @@ const Verification = () => {
                              focus:border-primary-600"
                   placeholder="e.g. 24EAM10234"
                   value={formData.hallTicket}
-                  onChange={(e) => setFormData({ ...formData, hallTicket: e.target.value })}
+                  onChange={(e) => {
+                    // A different number is a different person: drop the name shown.
+                    lookupSeq.current++;
+                    setFound(null);
+                    setNotMe(false);
+                    setApiError("");
+                    setLookingUp(false);
+                    setFormData({ hallTicket: e.target.value });
+                  }}
                   required
                 />
               </div>
 
-              <div>
-                <label htmlFor="candidateName" className="exam-label mb-2 block">
-                  Candidate full name
-                </label>
-                <input
-                  id="candidateName"
-                  type="text"
-                  autoComplete="name"
-                  className="w-full rounded-exam border border-gray-300 px-4 py-3 font-medium
-                             text-gray-900 outline-none transition-colors
-                             placeholder:font-normal placeholder:text-gray-400
-                             focus:border-primary-600"
-                  placeholder="As printed on your hall ticket"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  required
-                />
-              </div>
+              {found && (
+                <div className="rounded-exam border border-primary-200 bg-primary-50 px-5 py-4">
+                  <p className="exam-label">Is this you?</p>
+                  <div className="mt-2 flex items-center gap-3">
+                    <FiUser className="shrink-0 text-xl text-primary-700" />
+                    <div className="min-w-0">
+                      <p className="truncate text-lg font-semibold text-gray-900">{found.name}</p>
+                      {(found.branch || found.year) && (
+                        <p className="text-sm text-gray-600">
+                          {[found.branch, found.year && `Year ${found.year}`].filter(Boolean).join(" · ")}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {notMe && (
+                <div className="flex items-start gap-3 rounded-exam border border-amber-200 bg-amber-50 px-4 py-3">
+                  <FiAlertCircle className="mt-0.5 shrink-0 text-amber-600" />
+                  <p className="text-sm font-medium text-amber-900">
+                    Check the hall ticket number. If it is right and the name is not yours, ask your
+                    invigilator — do not sign in as someone else.
+                  </p>
+                </div>
+              )}
 
               <button
+                ref={confirmRef}
                 type="submit"
-                disabled={isLoading}
+                disabled={isLoading || lookingUp}
                 className="exam-action-primary w-full py-3.5 text-base"
               >
-                {isLoading ? "Verifying…" : "Sign in"}
+                {isLoading ? "Signing in…"
+                  : lookingUp ? "Finding your name…"
+                  : found ? <>Yes, this is me — sign in <FiArrowRight className="ml-1 inline" /></>
+                  : "Continue"}
               </button>
+
+              {found && (
+                <button
+                  type="button"
+                  onClick={() => { setFound(null); setNotMe(true); setApiError(""); }}
+                  className="w-full text-center text-sm font-semibold text-slate-500 hover:text-slate-800"
+                >
+                  This is not me
+                </button>
+              )}
             </form>
           </div>
           )}
