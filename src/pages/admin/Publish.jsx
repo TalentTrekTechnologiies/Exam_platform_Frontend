@@ -241,7 +241,7 @@ const Publish = () => {
                 <FiLink /> Share this with candidates
               </p>
               <p className="mb-4 text-sm text-gray-500">
-                They sign in with their hall ticket and name — nothing else to remember.
+                They sign in with their hall ticket number alone — their name appears for them to confirm.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <code className="flex-1 overflow-x-auto rounded-exam bg-gray-50 px-4 py-3 text-sm text-gray-800">

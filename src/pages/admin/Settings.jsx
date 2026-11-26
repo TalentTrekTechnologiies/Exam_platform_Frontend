@@ -132,6 +132,30 @@ const Settings = () => {
    * body rather than treating an absent one as "leave this alone", so sending
    * only the switch that changed would quietly turn the other one off.
    */
+  /** The paper's duration. Both proctoring flags travel with it, as below. */
+  const [durationDraft, setDurationDraft] = useState(null);
+  const [durationSaving, setDurationSaving] = useState(false);
+  const saveDuration = async () => {
+    const minutes = Number(durationDraft);
+    if (!Number.isInteger(minutes) || minutes < 1) {
+      setNotice({ tone: "error", text: "The duration must be a whole number of minutes, at least 1." });
+      return;
+    }
+    setDurationSaving(true);
+    setNotice(null);
+    try {
+      setExam(await api.put(`/admin/exam/${examId}`, {
+        duration: minutes, enableCamera: !!exam.enableCamera, enableMic: !!exam.enableMic,
+      }));
+      setDurationDraft(null);
+      setNotice({ tone: "ok", text: `Duration saved: ${minutes} minutes for everyone who starts from now on.` });
+    } catch (e) {
+      setNotice({ tone: "error", text: e.message || "The duration could not be saved." });
+    } finally {
+      setDurationSaving(false);
+    }
+  };
+
   const setProctoring = async (patch) => {
     if (!exam || proctorSaving) return;
     const previous = exam;
@@ -439,6 +463,42 @@ const Settings = () => {
             </div>
           )}
         </div>
+
+        {/* ── Duration ──────────────────────────────────────────────────────
+            Create Exam fills in 180 minutes, and there was nowhere to change it
+            afterwards: an exam made without touching that box was a three-hour
+            paper for good. */}
+        {exam && (
+          <div className="mt-5 rounded-exam border border-gray-200 bg-white p-6">
+            <label className="exam-label mb-1 block">Exam duration</label>
+            <p className="mb-4 text-sm text-gray-600">
+              How long each candidate gets, counted from when they start. This exam is currently{" "}
+              <span className="font-semibold text-gray-900">{exam.duration} minutes</span>.
+            </p>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min="1"
+                step="1"
+                value={durationDraft ?? exam.duration ?? ""}
+                onChange={(e) => setDurationDraft(e.target.value)}
+                className="h-11 w-32 rounded-exam border border-gray-300 px-3 text-sm tabular outline-none focus:border-primary-600"
+              />
+              <span className="text-sm text-gray-500">minutes</span>
+              <button
+                onClick={saveDuration}
+                disabled={durationSaving || durationDraft == null || Number(durationDraft) === exam.duration}
+                className="exam-action-primary"
+              >
+                {durationSaving ? "Saving…" : "Save"}
+              </button>
+            </div>
+            <p className="mt-3 text-xs text-gray-500">
+              Candidates already writing keep the time they started with. On a paper with timed
+              sections, keep this equal to the sections' total.
+            </p>
+          </div>
+        )}
 
         {/* ── Deleting the exam ──────────────────────────────────────────── */}
         {exam && (
