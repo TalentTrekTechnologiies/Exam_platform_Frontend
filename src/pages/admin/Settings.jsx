@@ -69,17 +69,30 @@ const Settings = () => {
   const [typedTitle, setTypedTitle] = useState("");
   const [deleting, setDeleting] = useState(false);
 
-  const deleteExam = async () => {
+  /*
+   * An exam somebody has sat is refused at first. The admin may then choose to
+   * delete the results with it -- a test paper, or attempts nobody needs -- as
+   * a second step that names how many results go, behind its own tick box.
+   */
+  const [hasResults, setHasResults] = useState(null);   // the server's refusal, when it had results
+  const [resultsUnderstood, setResultsUnderstood] = useState(false);
+
+  const deleteExam = async (includeResults = false) => {
     setDeleting(true);
     setExamError("");
     try {
-      await api.del(`/admin/exam/${examId}`);
+      await api.del(`/admin/exam/${examId}${includeResults ? "?includeResults=true" : ""}`);
       // The console works on "the exam you are on", and that exam is gone.
       localStorage.removeItem("examId");
       localStorage.removeItem("slotId");
       window.location.href = appPath("/admin/dashboard");
     } catch (e) {
-      setExamError(e.message || "That exam could not be deleted.");
+      if (e.code === "HAS_RESULTS") {
+        setHasResults(e.message);
+        setResultsUnderstood(false);
+      } else {
+        setExamError(e.message || "That exam could not be deleted.");
+      }
       setDeleting(false);
     }
   };
@@ -440,9 +453,9 @@ const Settings = () => {
 
             <div className="px-6 py-5">
               <p className="mb-4 rounded-exam bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                An exam anybody has already sat cannot be deleted — that would erase their
-                answers and marks. Unpublish it instead: it disappears from candidates without
-                disappearing from Results.
+                If candidates have already sat it, you are asked again before their answers and
+                marks are deleted with it. To keep their results, unpublish it instead: it
+                disappears from candidates without disappearing from Results.
               </p>
 
               {!confirmDelete ? (
@@ -463,9 +476,41 @@ const Settings = () => {
                     placeholder={exam.title}
                     className="w-full max-w-sm rounded-exam border border-gray-300 px-4 py-2 text-sm outline-none focus:border-red-500"
                   />
+                  {hasResults ? (
+                    <div className="space-y-3 rounded-exam border border-red-200 bg-red-50 px-4 py-4">
+                      <p className="text-sm font-medium text-red-900">{hasResults}</p>
+                      <label className="flex items-start gap-2 text-sm text-red-900">
+                        <input
+                          type="checkbox"
+                          checked={resultsUnderstood}
+                          onChange={(e) => setResultsUnderstood(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-red-300 text-red-600"
+                        />
+                        <span>
+                          Delete their answers and marks too. They will be gone from Results and the
+                          Excel download, and cannot be brought back.
+                        </span>
+                      </label>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => deleteExam(true)}
+                          disabled={deleting || !resultsUnderstood || typedTitle.trim() !== (exam.title || "").trim()}
+                          className="rounded-exam bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-40"
+                        >
+                          {deleting ? "Deleting…" : "Delete exam and its results"}
+                        </button>
+                        <button
+                          onClick={() => { setHasResults(null); setConfirmDelete(false); }}
+                          className="text-sm font-semibold text-gray-500 hover:text-gray-800"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={deleteExam}
+                      onClick={() => deleteExam(false)}
                       disabled={deleting || typedTitle.trim() !== (exam.title || "").trim()}
                       className="rounded-exam bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
                     >
@@ -478,6 +523,7 @@ const Settings = () => {
                       Cancel
                     </button>
                   </div>
+                  )}
                 </div>
               )}
             </div>
