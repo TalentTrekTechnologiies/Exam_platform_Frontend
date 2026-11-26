@@ -3,6 +3,7 @@ import Layout from "../../components/Layout/Layout";
 import { API_BASE, api, uploadUrl, readAdmin, appPath } from "../../lib/api";
 import { FiImage, FiCheck, FiAlertTriangle, FiVideo, FiMic, FiFilm } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
+import { introMedia } from "../../lib/introVideo";
 
 /**
  * The institution's own settings — its name and logo — and the proctoring
@@ -196,6 +197,25 @@ const Settings = () => {
     }
   };
 
+  const [videoLink, setVideoLink] = useState("");
+
+  const saveVideoLink = async () => {
+    const url = videoLink.trim();
+    if (!url) return;
+    setVideoBusy(true);
+    setNotice(null);
+    try {
+      const body = await api.put("/admin/profile/intro-video-link", { url });
+      setIntroVideo(body.introVideo || null);
+      setVideoLink("");
+      setNotice({ tone: "ok", text: "Link saved — candidates will watch it as they enter, before every exam." });
+    } catch (e) {
+      setNotice({ tone: "error", text: e.message || "That link could not be saved." });
+    } finally {
+      setVideoBusy(false);
+    }
+  };
+
   const removeVideo = async () => {
     setVideoBusy(true);
     setNotice(null);
@@ -271,18 +291,26 @@ const Settings = () => {
           <label className="exam-label mb-1 block">Introduction video</label>
           <p className="mb-4 text-sm text-gray-600">
             Candidates can sign in a little before the exam starts. This plays first as they
-            enter — your college's advertisement or welcome, 30 seconds to a minute — then they
-            read the instructions, and the paper opens at its start time. It cannot be skipped.
+            enter — your college's advertisement or welcome — until they press Skip or it ends,
+            then they read the instructions. When the exam opens the video stops and the exam
+            starts by itself.
           </p>
 
-          {introVideo && (
+          {introVideo && (introMedia(introVideo).kind === "youtube" ? (
+            <iframe
+              src={introMedia(introVideo).src.replace("autoplay=1", "autoplay=0")}
+              title="Introduction video"
+              allow="encrypted-media; picture-in-picture"
+              className="mb-4 aspect-video w-full rounded-exam bg-black"
+            />
+          ) : (
             <video
               src={uploadUrl(introVideo)}
               controls
               preload="metadata"
               className="mb-4 max-h-64 w-full rounded-exam bg-black"
             />
-          )}
+          ))}
 
           <div className="flex flex-wrap items-center gap-3">
             <label className={`exam-action-primary relative cursor-pointer ${videoBusy ? "pointer-events-none opacity-60" : ""}`}>
@@ -310,6 +338,26 @@ const Settings = () => {
             MP4, up to {VIDEO_LIMIT_MB} MB. Every candidate downloads it in the same few minutes, so keep it
             small — a one-minute 720p video is usually under 10 MB.
           </p>
+
+          <div className="mt-5 border-t border-gray-100 pt-5">
+            <label className="exam-label mb-2 block">Or use a link</label>
+            <div className="flex gap-3">
+              <input
+                value={videoLink}
+                onChange={(e) => setVideoLink(e.target.value)}
+                placeholder="https://www.youtube.com/watch?v=…"
+                className="h-11 min-w-0 flex-1 rounded-exam border border-gray-300 px-3 text-sm outline-none focus:border-primary-600"
+              />
+              <button onClick={saveVideoLink} disabled={videoBusy || !videoLink.trim()} className="exam-action-primary">
+                Use link
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500">
+              A YouTube link, or a direct link to an .mp4 file. Replaces any uploaded video. YouTube
+              must be reachable from the exam lab — if the college network blocks it, candidates see
+              an error and can press Skip.
+            </p>
+          </div>
         </div>
 
         <div className="mt-5 rounded-exam border border-gray-200 bg-white p-6">

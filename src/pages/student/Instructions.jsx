@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { FiArrowRight, FiAlertCircle, FiClock, FiVolume2 } from "react-icons/fi";
+import { FiArrowRight, FiAlertCircle, FiClock, FiVolume2, FiSkipForward } from "react-icons/fi";
 import { useExam } from "../../contexts/ExamContext";
 import { examApi, api, uploadUrl } from "../../lib/api";
 import StatusLegend from "../../components/Exam/StatusLegend";
+import { introMedia } from "../../lib/introVideo";
 
 const initialsOf = (name = "") =>
   name.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "—";
@@ -35,17 +36,21 @@ const clockText = (ms) => {
 };
 
 /**
- * The college's introduction, played once as the candidate enters the lobby.
+ * The college's introduction, played as the candidate enters the lobby.
  *
- * It cannot be skipped, but it can never trap anyone either: a file that fails
- * to load, or never starts playing, hands over to the rules on its own. Browsers
- * refuse sound on a page nobody has clicked yet (a refreshed lobby), so it then
- * plays muted with a button to bring the sound back.
+ * An uploaded file or a direct video link plays in a <video>; a YouTube link
+ * plays in YouTube's own player. It runs until the candidate presses Skip, the
+ * video ends, or the exam opens, whichever is first: the lobby closes it when
+ * the paper opens, so nobody is still watching an advertisement on their own
+ * exam time.
+ *
+ * A file that fails to load never traps anyone: it hands over to the rules on
+ * its own. Browsers refuse sound on a page nobody has clicked yet (a refreshed
+ * lobby), so a file then plays muted with a button to bring the sound back.
  */
-const IntroVideo = ({ src, collegeName, onDone }) => {
+const IntroVideo = ({ media, collegeName, opensIn, onDone }) => {
   const ref = useRef(null);
   const [muted, setMuted] = useState(false);
-  const [left, setLeft] = useState(null);
   const finished = useRef(false);
 
   const finish = useCallback(() => {
@@ -55,6 +60,7 @@ const IntroVideo = ({ src, collegeName, onDone }) => {
   }, [onDone]);
 
   useEffect(() => {
+    if (media.kind !== "file") return;
     const video = ref.current;
     if (!video) return;
     video.play().catch(() => {
@@ -65,40 +71,60 @@ const IntroVideo = ({ src, collegeName, onDone }) => {
     // A lab connection that cannot fetch the file must not hold anyone here.
     const giveUp = setTimeout(() => { if (video.paused) finish(); }, 20000);
     return () => clearTimeout(giveUp);
-  }, [finish]);
+  }, [media, finish]);
+
+  const frame = "aspect-video max-h-[75vh] w-full max-w-5xl rounded-exam bg-black shadow-2xl";
 
   return (
     <div className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-chrome px-6">
-      <p className="mb-4 text-sm font-medium text-gray-300">
-        A message from {collegeName || "your institution"}
-      </p>
-      <video
-        ref={ref}
-        src={src}
-        playsInline
-        disablePictureInPicture
-        controlsList="nodownload nofullscreen noremoteplayback"
-        onContextMenu={(e) => e.preventDefault()}
-        onTimeUpdate={(e) => {
-          const v = e.currentTarget;
-          if (Number.isFinite(v.duration)) setLeft(v.duration - v.currentTime);
-        }}
-        onEnded={finish}
-        onError={finish}
-        className="max-h-[75vh] w-full max-w-5xl rounded-exam bg-black shadow-2xl"
-      />
-      <div className="mt-4 flex items-center gap-4 text-sm text-gray-400">
+      <div className="mb-4 flex w-full max-w-5xl items-center justify-between gap-4">
+        <p className="text-sm font-medium text-gray-300">
+          A message from {collegeName || "your institution"}
+        </p>
+        {opensIn != null && (
+          <p className="text-sm text-gray-400">
+            Exam opens in <span className="font-semibold tabular text-white">{clockText(opensIn)}</span>
+          </p>
+        )}
+      </div>
+
+      {media.kind === "youtube" ? (
+        <iframe
+          src={media.src}
+          title={`A message from ${collegeName || "your institution"}`}
+          allow="autoplay; encrypted-media; picture-in-picture"
+          referrerPolicy="strict-origin-when-cross-origin"
+          className={frame}
+        />
+      ) : (
+        <video
+          ref={ref}
+          src={media.src}
+          playsInline
+          disablePictureInPicture
+          controlsList="nodownload nofullscreen noremoteplayback"
+          onContextMenu={(e) => e.preventDefault()}
+          onEnded={finish}
+          onError={finish}
+          className={frame}
+        />
+      )}
+
+      <div className="mt-4 flex w-full max-w-5xl items-center justify-end gap-3">
         {muted && (
           <button
             onClick={() => { ref.current.muted = false; setMuted(false); }}
-            className="flex items-center gap-2 rounded-exam bg-white px-4 py-2 font-semibold text-chrome"
+            className="flex items-center gap-2 rounded-exam border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
           >
             <FiVolume2 /> Turn sound on
           </button>
         )}
-        <span className="tabular">
-          {left != null ? `The instructions follow in ${clockText(left * 1000)}` : "Loading…"}
-        </span>
+        <button
+          onClick={finish}
+          className="flex items-center gap-2 rounded-exam bg-white px-5 py-2 text-sm font-semibold text-chrome hover:opacity-90"
+        >
+          Skip <FiSkipForward />
+        </button>
       </div>
     </div>
   );
@@ -133,7 +159,8 @@ const Instructions = () => {
   const candidateName = localStorage.getItem("studentName") || "Candidate";
   const hallTicket = localStorage.getItem("hallTicket") || "";
 
-  // The introduction plays once per sign-in, not again on every refresh.
+  // The introduction plays once per sign-in, not again on every refresh:
+  // skipped, finished or cut short by the opening, it is done.
   const introKey = `introSeen:${localStorage.getItem("student_examId")}:${localStorage.getItem("studentId")}`;
   const [introDone, setIntroDone] = useState(() => sessionStorage.getItem(introKey) === "1");
   const endIntro = useCallback(() => {
@@ -205,20 +232,21 @@ const Instructions = () => {
     }
   }, [exam, beginAttempt, navigate]);
 
-  // A candidate who has read and agreed before the start goes straight in when
-  // it arrives. Spread over a few seconds so a whole lab does not press Start
-  // in the same instant. Decided once, at the opening moment: ticking the box
-  // later is not a request to start, the Begin button is.
+  // Everyone waiting in the lobby goes straight in when the exam opens,
+  // whether they were reading the rules or still watching the video, which
+  // stops there. Spread over a few seconds so a whole lab does not press Start
+  // in the same instant. Decided once, at the opening moment: somebody who
+  // arrives after it reads the rules and presses Begin.
   const waitedForOpen = useRef(false);
-  const readyRef = useRef(false);
-  readyRef.current = agreed && introDone;
   const startRef = useRef(startExam);
   startRef.current = startExam;
+  const endIntroRef = useRef(endIntro);
+  endIntroRef.current = endIntro;
   useEffect(() => {
     if (!isOpen) { waitedForOpen.current = true; return; }
     if (!waitedForOpen.current) return;
     waitedForOpen.current = false;
-    if (!readyRef.current) return;
+    endIntroRef.current();
     const id = setTimeout(() => startRef.current(), Math.random() * 3000);
     return () => clearTimeout(id);
   }, [isOpen]);
@@ -244,7 +272,12 @@ const Instructions = () => {
     <div className="min-h-screen bg-gray-50" onContextMenu={(e) => e.preventDefault()}>
 
       {exam?.introVideo && !introDone && (
-        <IntroVideo src={uploadUrl(exam.introVideo)} collegeName={exam.collegeName} onDone={endIntro} />
+        <IntroVideo
+          media={introMedia(exam.introVideo)}
+          collegeName={exam.collegeName}
+          opensIn={openAt != null && !isOpen ? openAt - now : null}
+          onDone={endIntro}
+        />
       )}
 
       <header className="flex h-14 items-center gap-3 bg-chrome px-6">
@@ -397,7 +430,7 @@ const Instructions = () => {
 
         <p className="mt-4 text-center text-xs text-gray-400">
           {!isOpen
-            ? `Tick the box and the exam will open by itself at ${openTimeText}.`
+            ? `The exam opens by itself at ${openTimeText}.`
             : "Your time starts the moment you begin."}
         </p>
       </main>
