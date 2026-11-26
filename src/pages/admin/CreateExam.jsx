@@ -6,6 +6,7 @@ import Button from "../../components/UI/Button";
 import { FiClock, FiImage, FiChevronRight, FiCheckCircle, FiShield , FiPlus } from "react-icons/fi";
 import { API_BASE, api, uploadUrl, readAdmin } from "../../lib/api";
 import SittingPicker from "../../components/Admin/SittingPicker";
+import { effectiveBuffer, lastEntry } from "../../lib/buffer";
 
 export default function CreateExam() {
   const navigate = useNavigate();
@@ -19,7 +20,7 @@ export default function CreateExam() {
    * the creation form suggesting sittings existed at all. Stating them here
    * means the exam arrives complete.
    */
-  const [sittings, setSittings] = useState([{ date: "", from: "", to: "" }]);
+  const [sittings, setSittings] = useState([{ date: "", from: "", buffer: "" }]);
 
   const setSitting = (index, patch) =>
     setSittings((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
@@ -27,7 +28,7 @@ export default function CreateExam() {
   // A second sitting is nearly always the same day as the first, so it starts
   // from that date rather than empty.
   const addSitting = () =>
-    setSittings((prev) => [...prev, { date: prev[prev.length - 1]?.date || "", from: "", to: "" }]);
+    setSittings((prev) => [...prev, { date: prev[prev.length - 1]?.date || "", from: "", buffer: "" }]);
   const removeSitting = (index) =>
     setSittings((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== index)));
 
@@ -79,14 +80,16 @@ export default function CreateExam() {
       // empty string into a date and rejects the whole request.
       // Ordered so the first and last bound the exam, whatever order they
       // were typed in.
-      // Composed here, where the date and the two times finally come together.
+      // Composed here, where the date, the start and the buffer come together.
+      // The slot's end is the last moment to enter: start + buffer.
       const usable = sittings
-        .filter((s) => s.date && s.from && s.to && s.to > s.from)
-        .map((s) => ({ startDate: `${s.date}T${s.from}`, endDate: `${s.date}T${s.to}` }))
+        .map((s) => ({ ...s, minutes: effectiveBuffer(s.buffer, exam.duration) }))
+        .filter((s) => s.date && s.from && Number.isInteger(s.minutes) && s.minutes >= 1)
+        .map((s) => ({ startDate: `${s.date}T${s.from}`, endDate: lastEntry(`${s.date}T${s.from}`, s.minutes) }))
         .sort((a, b) => a.startDate.localeCompare(b.startDate));
 
       if (usable.length === 0) {
-        alert("Add at least one sitting, with an end time after its start.");
+        alert("Add at least one sitting: a date, a start time, and a buffer of at least 1 minute.");
         setLoading(false);
         return;
       }
@@ -97,7 +100,7 @@ export default function CreateExam() {
         // The exam's own window spans every sitting, so an exam that runs
         // morning and evening reads correctly wherever it is summarised.
         startDate: usable.length ? usable[0].startDate : null,
-        endDate: usable.length ? usable[usable.length - 1].endDate : null,
+        endDate: usable.length ? usable.map((u) => u.endDate).sort().at(-1) : null,
         slots: usable.map((s) => ({ startTime: s.startDate, endTime: s.endDate })),
         // The server stores the marking scheme under these names, and applies
         // it to any imported question that doesn't declare its own. Sending
@@ -209,6 +212,8 @@ export default function CreateExam() {
             <p className="-mt-2 mb-4 text-xs text-gray-500">
               Add one sitting per batch. Candidates are enrolled into a particular sitting,
               so a morning and an evening group can take the same paper at different times.
+              The buffer is how late a candidate may still start — 10% of the duration unless
+              you change it. Everyone gets the full duration from when they start.
             </p>
 
             <div className="p-3 bg-gray-50 rounded-xl mb-4 max-w-xs">
@@ -227,6 +232,7 @@ export default function CreateExam() {
                   key={i}
                   index={i}
                   sitting={sitting}
+                  duration={exam.duration}
                   canRemove={sittings.length > 1}
                   onChange={(patch) => setSitting(i, patch)}
                   onRemove={() => removeSitting(i)}

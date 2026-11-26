@@ -4,6 +4,7 @@ import Layout from "../../components/Layout/Layout";
 import { api } from "../../lib/api";
 import { FiPlus, FiTrash2, FiClock, FiAlertTriangle, FiArrowRight, FiEdit3 } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
+import { defaultBuffer, effectiveBuffer, lastEntry, minutesBetween, timeOf } from "../../lib/buffer";
 
 /**
  * Time windows candidates can sit this exam in.
@@ -31,7 +32,10 @@ const Slots = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
-  const [form, setForm] = useState({ startTime: "", endTime: "" });
+  // A slot is an opening time and a buffer: how late a candidate may still
+  // start. Its stored end is opening + buffer.
+  const [form, setForm] = useState({ startTime: "", buffer: "" });
+  const [duration, setDuration] = useState(null);
 
   /**
    * The slot being re-timed, if any.
@@ -41,29 +45,38 @@ const Slots = () => {
    * operation than "the hall is not free until eleven" deserves.
    */
   const [editing, setEditing] = useState(null);
-  const [editForm, setEditForm] = useState({ startTime: "", endTime: "" });
+  const [editForm, setEditForm] = useState({ startTime: "", buffer: "" });
 
   /** A datetime-local input wants "YYYY-MM-DDTHH:mm" and nothing more. */
   const forInput = (iso) => (iso ? String(iso).replace(" ", "T").slice(0, 16) : "");
 
   const beginEdit = (slot) => {
     setEditing(slot.id);
-    setEditForm({ startTime: forInput(slot.startTime), endTime: forInput(slot.endTime) });
+    setEditForm({
+      startTime: forInput(slot.startTime),
+      buffer: String(minutesBetween(forInput(slot.startTime), forInput(slot.endTime))),
+    });
     setError("");
   };
 
+  /** The slot's end for a form, or null with the error already shown. */
+  const endFor = (f) => {
+    const minutes = effectiveBuffer(f.buffer, duration);
+    if (!f.startTime) { setError("Set the start time."); return null; }
+    if (!Number.isInteger(minutes) || minutes < 1) { setError("The buffer must be at least 1 minute."); return null; }
+    return lastEntry(f.startTime, minutes);
+  };
+
   const saveEdit = async () => {
-    if (!editForm.startTime || !editForm.endTime) {
-      setError("Set both a start and an end time.");
-      return;
-    }
+    const endTime = endFor(editForm);
+    if (!endTime) return;
     setSaving(true);
     setError("");
     try {
       const updated = await api.put(`/admin/slot/${editing}`, {
         examId: Number(examId),
         startTime: editForm.startTime,
-        endTime: editForm.endTime,
+        endTime,
       });
       setSlots((prev) => prev.map((x) => (x.id === editing ? updated : x)));
       setEditing(null);
@@ -80,6 +93,8 @@ const Slots = () => {
       setLoading(true);
       try {
         setSlots(await api.get(`/admin/slot/${examId}`));
+        // For the 10% default buffer. The page still works without it.
+        api.get(`/admin/exam/${examId}`).then((e) => setDuration(e?.duration ?? null)).catch(() => {});
       } catch (e) {
         setError(e.message || "Could not load slots.");
       } finally {
@@ -90,15 +105,16 @@ const Slots = () => {
 
   const create = async (e) => {
     e.preventDefault();
-    if (!form.startTime || !form.endTime) { setError("Set both a start and an end time."); return; }
+    const endTime = endFor(form);
+    if (!endTime) return;
     setSaving(true);
     setError("");
     try {
       const slot = await api.post("/admin/slot", {
-        examId: Number(examId), startTime: form.startTime, endTime: form.endTime,
+        examId: Number(examId), startTime: form.startTime, endTime,
       });
       setSlots((prev) => [...prev, slot]);
-      setForm({ startTime: "", endTime: "" });
+      setForm({ startTime: "", buffer: "" });
     } catch (e) {
       setError(e.message || "That slot could not be saved.");
     } finally {
@@ -115,6 +131,10 @@ const Slots = () => {
       setError(e.message || "That slot could not be deleted.");
     }
   };
+
+  const formMinutes = effectiveBuffer(form.buffer, duration);
+  const formUntil = form.startTime && Number.isInteger(formMinutes) && formMinutes >= 1
+    ? lastEntry(form.startTime, formMinutes) : null;
 
   if (!examId) {
     return (
@@ -139,14 +159,25 @@ const Slots = () => {
               />
             </div>
             <div>
-              <label className="exam-label mb-2 block">Closes</label>
+              <label className="exam-label mb-2 block">Buffer (min)</label>
               <input
-                type="datetime-local"
-                value={form.endTime}
-                onChange={(e) => setForm({ ...form, endTime: e.target.value })}
-                className="h-11 w-full rounded-exam border border-gray-300 px-3 text-sm outline-none focus:border-primary-600"
+                type="number"
+                min="1"
+                step="1"
+                value={form.buffer}
+                placeholder={duration ? String(defaultBuffer(duration)) : "10% of duration"}
+                onChange={(e) => setForm({ ...form, buffer: e.target.value })}
+                className="h-11 w-full rounded-exam border border-gray-300 px-3 text-sm tabular outline-none focus:border-primary-600"
               />
             </div>
+            <p className="text-xs text-gray-500 sm:col-span-2">
+              The buffer is how late a candidate may still start — 10% of the duration unless you
+              change it. Each gets the exam's full duration from the moment they start: someone
+              who begins 5 minutes late finishes 5 minutes later.
+              {formUntil && (
+                <span className="font-semibold text-gray-700"> Late entry until {timeOf(formUntil)}.</span>
+              )}
+            </p>
             <div className="sm:col-span-2">
               <button type="submit" disabled={saving} className="exam-action-primary flex items-center gap-2">
                 <FiPlus /> {saving ? "Adding…" : "Add slot"}
@@ -184,10 +215,10 @@ const Slots = () => {
                                  className="rounded-exam border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-600" />
                         </div>
                         <div>
-                          <label className="exam-label mb-1 block">Closes</label>
-                          <input type="datetime-local" value={editForm.endTime}
-                                 onChange={(e) => setEditForm({ ...editForm, endTime: e.target.value })}
-                                 className="rounded-exam border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-600" />
+                          <label className="exam-label mb-1 block">Buffer (min)</label>
+                          <input type="number" min="1" step="1" value={editForm.buffer}
+                                 onChange={(e) => setEditForm({ ...editForm, buffer: e.target.value })}
+                                 className="w-28 rounded-exam border border-gray-300 px-3 py-2 text-sm tabular outline-none focus:border-primary-600" />
                         </div>
                         <button onClick={saveEdit} disabled={saving} className="exam-action-primary">
                           {saving ? "Saving…" : "Save"}
@@ -204,14 +235,16 @@ const Slots = () => {
                   <div key={s.id} className="flex items-center justify-between px-5 py-4">
                     <div className="text-sm">
                       <span className="font-semibold text-gray-900">{new Date(s.startTime).toLocaleString()}</span>
-                      <span className="mx-2 text-gray-400">→</span>
-                      <span className="font-semibold text-gray-900">{new Date(s.endTime).toLocaleString()}</span>
+                      <span className="ml-2 text-gray-500">
+                        · late entry until {new Date(s.endTime).toLocaleString()}
+                        {" "}({minutesBetween(s.startTime, s.endTime)} min buffer)
+                      </span>
                       {/* Said plainly, because a closed window is the usual
                           reason a candidate cannot sign in and the usual reason
                           somebody is on this screen at all. */}
                       {closed && (
                         <span className="ml-3 rounded bg-amber-100 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
-                          window closed
+                          entry closed
                         </span>
                       )}
                     </div>

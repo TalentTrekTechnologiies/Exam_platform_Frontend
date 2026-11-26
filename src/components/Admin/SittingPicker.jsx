@@ -1,50 +1,39 @@
-import React, { useMemo } from "react";
-import { FiCalendar, FiClock, FiTrash2, FiSunrise, FiSun, FiSunset } from "react-icons/fi";
+import React from "react";
+import { FiCalendar, FiClock, FiTrash2, FiSunrise, FiSun, FiSunset, FiUserPlus } from "react-icons/fi";
+import { defaultBuffer, effectiveBuffer, lastEntry, timeOf } from "../../lib/buffer";
 
 /**
  * When one batch sits.
  *
- * Two <input type="datetime-local"> fields were technically sufficient and
- * awkward in practice: each one asks for a date the admin has already given,
- * every browser renders them differently, and neither shows the thing actually
- * being decided — how long the hall is open for.
+ * An exam sitting is a date, the time it opens, and how late a candidate may
+ * still come in: the buffer. Everyone gets the full duration from the moment
+ * they start, so the buffer is the only thing that decides how long the hall
+ * stays busy. It starts at 10% of the duration (6 minutes for an hour's
+ * paper) and is the admin's to change.
  *
- * An exam sitting is one date with a window inside it, so that is what this
- * asks for: a date, a start, an end, and the resulting length in plain words.
- * The presets cover the shifts colleges actually run.
+ * The presets set the opening time for the shifts colleges actually run.
  */
 
 const PRESETS = [
-  { label: "Morning",   from: "09:00", to: "12:00", Icon: FiSunrise },
-  { label: "Afternoon", from: "14:00", to: "17:00", Icon: FiSun },
-  { label: "Evening",   from: "17:00", to: "20:00", Icon: FiSunset },
+  { label: "Morning",   from: "09:00", Icon: FiSunrise },
+  { label: "Afternoon", from: "14:00", Icon: FiSun },
+  { label: "Evening",   from: "17:00", Icon: FiSunset },
 ];
 
-function describe(date, from, to) {
-  if (!date || !from || !to) return null;
-  const ms = new Date(`${date}T${to}`) - new Date(`${date}T${from}`);
-  if (Number.isNaN(ms)) return null;
-  if (ms <= 0) return { bad: true, text: "Ends before it starts" };
-  const mins = Math.round(ms / 60000);
-  const h = Math.floor(mins / 60);
-  const m = mins % 60;
-  return {
-    bad: false,
-    text: `Open for ${h ? `${h} hour${h === 1 ? "" : "s"}` : ""}${h && m ? " " : ""}${m ? `${m} min` : ""}`.trim(),
-  };
-}
-
-export default function SittingPicker({ index, sitting, onChange, onRemove, canRemove }) {
-  // The date, start and end are held as they are typed rather than being
+export default function SittingPicker({ index, sitting, duration, onChange, onRemove, canRemove }) {
+  // The date, start and buffer are held as they are typed rather than being
   // derived back out of a combined timestamp. Deriving them meant a date
   // entered before any time was silently discarded — the combined value is
   // empty until both halves exist — so the field cleared itself and the
   // presets stayed disabled no matter what was chosen.
-  const { date = "", from = "", to = "" } = sitting;
+  //
+  // A blank buffer means "the default", so it follows the duration as that is
+  // edited, until the admin types a number of their own.
+  const { date = "", from = "", buffer = "" } = sitting;
 
-  const applyPreset = (p) => onChange({ from: p.from, to: p.to });
-
-  const summary = useMemo(() => describe(date, from, to), [date, from, to]);
+  const minutes = effectiveBuffer(buffer, duration);
+  const valid = Number.isInteger(minutes) && minutes >= 1;
+  const until = date && from && valid ? lastEntry(`${date}T${from}`, minutes) : null;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -76,7 +65,7 @@ export default function SittingPicker({ index, sitting, onChange, onRemove, canR
 
         <label className="block">
           <span className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
-            <FiClock /> Opens
+            <FiClock /> Starts
           </span>
           <input
             type="time"
@@ -89,14 +78,16 @@ export default function SittingPicker({ index, sitting, onChange, onRemove, canR
 
         <label className="block">
           <span className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold text-gray-500">
-            <FiClock /> Closes
+            <FiUserPlus /> Buffer (min)
           </span>
           <input
-            type="time"
-            value={to}
-            onChange={(e) => onChange({ to: e.target.value })}
+            type="number"
+            min="1"
+            step="1"
+            value={buffer}
+            placeholder={String(defaultBuffer(duration))}
+            onChange={(e) => onChange({ buffer: e.target.value })}
             className="h-11 w-full rounded-lg border border-gray-300 px-3 text-sm tabular outline-none focus:border-indigo-500"
-            required
           />
         </label>
       </div>
@@ -106,7 +97,7 @@ export default function SittingPicker({ index, sitting, onChange, onRemove, canR
           <button
             key={p.label}
             type="button"
-            onClick={() => applyPreset(p)}
+            onClick={() => onChange({ from: p.from })}
             disabled={!date}
             className="flex items-center gap-1.5 rounded-full border border-gray-200 px-3 py-1 text-xs font-semibold
                        text-gray-600 transition-colors hover:border-indigo-400 hover:text-indigo-700
@@ -116,11 +107,13 @@ export default function SittingPicker({ index, sitting, onChange, onRemove, canR
           </button>
         ))}
 
-        {summary && (
-          <span className={`ml-auto text-xs font-semibold ${summary.bad ? "text-red-600" : "text-gray-500"}`}>
-            {summary.text}
-          </span>
-        )}
+        <span className={`ml-auto text-xs font-semibold ${valid ? "text-gray-500" : "text-red-600"}`}>
+          {!valid
+            ? "Buffer must be at least 1 minute"
+            : until
+              ? `Late entry until ${timeOf(until)}`
+              : `${minutes} min late entry${buffer === "" ? " (10% of duration)" : ""}`}
+        </span>
       </div>
     </div>
   );
