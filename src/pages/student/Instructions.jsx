@@ -237,9 +237,13 @@ const Instructions = () => {
 
   // Everyone waiting in the lobby goes straight in when the exam opens,
   // whether they were reading the rules or still watching the video, which
-  // stops there. Spread over a few seconds so a whole lab does not press Start
-  // in the same instant. Decided once, at the opening moment: somebody who
-  // arrives after it reads the rules and presses Begin.
+  // stops there. Spread over ten seconds so a whole lab does not press Start
+  // in the same instant: on a two-core server shared with its database, 600
+  // starts in one second queue behind each other, the same 600 over ten do
+  // not. Nobody loses time by it -- each clock starts at that candidate's own
+  // start -- and the button says "Starting…" throughout. Decided once, at the
+  // opening moment: somebody who arrives after it reads the rules and presses
+  // Begin.
   const waitedForOpen = useRef(false);
   const startRef = useRef(startExam);
   startRef.current = startExam;
@@ -250,7 +254,8 @@ const Instructions = () => {
     if (!waitedForOpen.current) return;
     waitedForOpen.current = false;
     endIntroRef.current();
-    const id = setTimeout(() => startRef.current(), Math.random() * 3000);
+    setStarting(true);
+    const id = setTimeout(() => startRef.current(), Math.random() * 10000);
     return () => clearTimeout(id);
   }, [isOpen]);
 

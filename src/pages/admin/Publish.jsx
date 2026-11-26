@@ -65,7 +65,9 @@ const Publish = () => {
     setPrepareResult("");
     setError("");
     try {
-      const r = await api.post(`/admin/exam/${examId}/prepare`, {});
+      // Hundreds of papers take a minute or more; the usual 15 s would
+      // report a failure for work the server goes on to finish.
+      const r = await api.post(`/admin/exam/${examId}/prepare`, {}, { timeoutMs: 300000 });
       setPrepareResult(r.summary || "Papers prepared.");
       load();
     } catch (e) {

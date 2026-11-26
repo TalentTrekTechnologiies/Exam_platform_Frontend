@@ -106,7 +106,7 @@ const Monitor = () => {
     setPreparing(true);
     setPrepareResult("");
     try {
-      const r = await api.post(`/admin/exam/${examId}/prepare`);
+      const r = await api.post(`/admin/exam/${examId}/prepare`, undefined, { timeoutMs: 300000 });
       setPrepareResult(r.summary || "Papers prepared.");
       load();
     } catch (e) {
