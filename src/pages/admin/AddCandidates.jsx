@@ -47,6 +47,20 @@ const AddCandidates = () => {
   // Generate route
   const [prefix, setPrefix] = useState("");
   const [padding, setPadding] = useState(3);
+
+  // Branch and year for a whole batch: a pasted list of names, or a roster
+  // file that is one department's and so has no Branch column of its own.
+  // They travel to the results export.
+  const [batchBranch, setBatchBranch] = useState("");
+  const [batchYear, setBatchYear] = useState("");
+
+  /** Fills every row's branch and year from the batch values, keeping any a row already has. */
+  const fillBatch = () =>
+    setRows((prev) => prev.map((r) => ({
+      ...r,
+      branch: r.branch?.trim() ? r.branch : batchBranch.trim(),
+      year: r.year?.trim() ? r.year : batchYear.trim(),
+    })));
   const [names, setNames] = useState("");
   const [issued, setIssued] = useState(null);
 
@@ -96,7 +110,9 @@ const AddCandidates = () => {
   };
 
   const updateRow = (i, field, value) =>
-    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, [field]: value, issue: null } : r)));
+    setRows((prev) => prev.map((r, idx) => (idx !== i ? r
+      // Fixing the ticket or name may cure the row's problem; a branch or year cannot.
+      : { ...r, [field]: value, ...(field === "hallTicket" || field === "name" ? { issue: null } : {}) })));
 
   /**
    * Numbers the candidates in order and writes the result onto the rows.
@@ -143,7 +159,12 @@ const AddCandidates = () => {
     try {
       const clean = rows
         .filter((r) => r.hallTicket?.trim() && r.name?.trim())
-        .map((r) => ({ hallTicket: r.hallTicket.trim(), name: r.name.trim() }));
+        .map((r) => ({
+          hallTicket: r.hallTicket.trim(),
+          name: r.name.trim(),
+          branch: (r.branch || "").trim(),
+          year: (r.year || "").trim(),
+        }));
       const report = await api.post("/admin/students/import/confirm", {
         examId: Number(examId), slotId: Number(slotId), candidates: clean,
       }, ENROL_OPTS);
@@ -164,6 +185,7 @@ const AddCandidates = () => {
       const report = await api.post("/admin/students/issue-hall-tickets", {
         examId: Number(examId), slotId: Number(slotId),
         prefix, padding: Number(padding),
+        branch: batchBranch.trim(), year: batchYear.trim(),
         names: names.split(/\r?\n/).map((n) => n.trim()).filter(Boolean),
       }, ENROL_OPTS);
       setIssued(report);
@@ -391,12 +413,36 @@ const AddCandidates = () => {
             </div>
           ))}
 
+          <div className="mb-3 flex flex-wrap items-end gap-3 rounded-exam border border-gray-200 bg-white px-5 py-4">
+            <label>
+              <span className="exam-label mb-1 block">Branch</span>
+              <input value={batchBranch} onChange={(e) => setBatchBranch(e.target.value.toUpperCase())}
+                     placeholder="MECH"
+                     className="w-32 rounded-exam border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-600" />
+            </label>
+            <label>
+              <span className="exam-label mb-1 block">Year</span>
+              <input value={batchYear} onChange={(e) => setBatchYear(e.target.value)}
+                     placeholder="3"
+                     className="w-20 rounded-exam border border-gray-300 px-3 py-2 text-sm outline-none focus:border-primary-600" />
+            </label>
+            <button type="button" onClick={fillBatch} disabled={!batchBranch.trim() && !batchYear.trim()}
+                    className="exam-action-quiet">
+              Fill empty rows
+            </button>
+            <p className="text-xs text-gray-500">
+              Read from Branch and Year columns when the file has them. These appear in the results download.
+            </p>
+          </div>
+
           <div className="overflow-x-auto rounded-exam border border-gray-200 bg-white">
-            <table className="w-full min-w-[38rem] text-sm">
+            <table className="w-full min-w-[46rem] text-sm">
               <thead>
                 <tr className="border-b border-gray-200">
                   <th className="px-5 py-3 text-left exam-label">Hall ticket</th>
                   <th className="px-5 py-3 text-left exam-label">Candidate name</th>
+                  <th className="px-5 py-3 text-left exam-label">Branch</th>
+                  <th className="px-5 py-3 text-left exam-label">Year</th>
                   <th className="px-5 py-3 text-left exam-label">Needs attention</th>
                   <th className="px-5 py-3" />
                 </tr>
@@ -411,6 +457,14 @@ const AddCandidates = () => {
                     <td className="px-5 py-2">
                       <input value={r.name || ""} onChange={(e) => updateRow(i, "name", e.target.value)}
                              className="w-full rounded border border-gray-200 px-2 py-1 outline-none focus:border-primary-600" />
+                    </td>
+                    <td className="px-5 py-2">
+                      <input value={r.branch || ""} onChange={(e) => updateRow(i, "branch", e.target.value)}
+                             className="w-24 rounded border border-gray-200 px-2 py-1 outline-none focus:border-primary-600" />
+                    </td>
+                    <td className="px-5 py-2">
+                      <input value={r.year || ""} onChange={(e) => updateRow(i, "year", e.target.value)}
+                             className="w-14 rounded border border-gray-200 px-2 py-1 outline-none focus:border-primary-600" />
                     </td>
                     <td className="px-5 py-2 text-xs text-amber-800">{r.issue || ""}</td>
                     <td className="px-5 py-2 text-right">
@@ -447,6 +501,24 @@ const AddCandidates = () => {
                 </span>
               </p>
             </div>
+          </div>
+
+          <div className="mt-4 grid gap-4 sm:grid-cols-3">
+            <label>
+              <span className="exam-label mb-1 block">Branch (optional)</span>
+              <input value={batchBranch} onChange={(e) => setBatchBranch(e.target.value.toUpperCase())}
+                     placeholder="MECH"
+                     className="w-full rounded-exam border border-gray-300 px-3 py-2 outline-none focus:border-primary-600" />
+            </label>
+            <label>
+              <span className="exam-label mb-1 block">Year (optional)</span>
+              <input value={batchYear} onChange={(e) => setBatchYear(e.target.value)}
+                     placeholder="3"
+                     className="w-full rounded-exam border border-gray-300 px-3 py-2 outline-none focus:border-primary-600" />
+            </label>
+            <p className="flex items-end text-sm text-gray-500">
+              Applied to every name below, and shown in the results download.
+            </p>
           </div>
 
           <label className="mt-4 block">

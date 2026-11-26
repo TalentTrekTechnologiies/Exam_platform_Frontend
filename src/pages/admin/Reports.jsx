@@ -4,6 +4,47 @@ import { api } from "../../lib/api";
 import CodeSubmissions from "../../components/Admin/CodeSubmissions";
 import { FiDownload, FiInbox, FiSearch, FiEye, FiEyeOff, FiAlertTriangle } from "react-icons/fi";
 import ExamPicker from "../../components/Admin/ExamPicker";
+import * as XLSX from "xlsx";
+
+/**
+ * One row per candidate, as staff hand results on: who they are, which
+ * branch and year, which exam, the marks and the percentage. The same table
+ * goes to both Excel and CSV so the two never disagree.
+ *
+ * Branch and Year only appear when somebody in the exam has one. An entrance
+ * test sat by outside candidates (KGCET) has neither, and two empty columns
+ * in every row read as missing data rather than as not applying.
+ */
+const ALL_COLUMNS = [
+  { title: "Rank",         width: 6,  value: (c) => (c.submitted ? c.rank : "") },
+  { title: "Hall Ticket",  width: 16, value: (c) => c.hallTicket ?? "" },
+  { title: "Name",         width: 28, value: (c) => c.name ?? "" },
+  { title: "Branch",       width: 12, value: (c) => c.branch ?? "", optional: "branch" },
+  { title: "Year",         width: 8,  value: (c) => c.year ?? "", optional: "year" },
+  { title: "Exam",         width: 28, value: (c, d) => d.examTitle ?? "" },
+  { title: "Marks",        width: 8,  value: (c) => (c.submitted ? c.score : "") },
+  { title: "Out Of",       width: 8,  value: (c, d) => d.totalMarks ?? "" },
+  { title: "Percentage",   width: 11, value: (c) => (c.submitted && c.percentage != null ? c.percentage : "") },
+  { title: "Status",       width: 22, value: (c) => (c.submitted ? "Submitted" : "Absent / not submitted") },
+  { title: "Submitted At", width: 22, value: (c) => (c.submittedAt ? new Date(c.submittedAt).toLocaleString() : "") },
+];
+
+/** Whether anyone in this exam has a value for `key` ("branch", "year"). */
+const anyoneHas = (data, key) => (data?.candidates ?? []).some((c) => String(c[key] ?? "").trim());
+
+const resultColumns = (data) => ALL_COLUMNS.filter((col) => !col.optional || anyoneHas(data, col.optional));
+
+const resultTable = (data) => {
+  const cols = resultColumns(data);
+  return {
+    cols,
+    rows: [cols.map((c) => c.title), ...(data?.candidates ?? []).map((c) => cols.map((col) => col.value(c, data)))],
+  };
+};
+
+/** A file name from the exam's title: "Mech Mock 1 - results". */
+const fileBase = (data, examId) =>
+  `${(data?.examTitle || `exam-${examId}`).replace(/[\\/:*?"<>|]+/g, " ").trim()} - results`;
 
 /**
  * Results for a finished exam.
@@ -74,27 +115,36 @@ const Reports = () => {
     );
   }, [data, query]);
 
+  // Built from data already in hand — no separate endpoint, and it exports the
+  // real results (rank, marks, percentage), not the roster.
+  // An entrance test with only outside candidates has no branch or year.
+  const showBranchYear = anyoneHas(data, "branch") || anyoneHas(data, "year");
+
   const exportCsv = () => {
-    const list = data?.candidates ?? [];
-    // Built from data already in hand — no separate endpoint, and it exports the
-    // real results (rank, score, submission time), not the roster.
-    const header = ["Rank", "Hall Ticket", "Name", "Score", "Submitted", "Submitted At"];
     const escape = (v) => {
       const s = v == null ? "" : String(v);
       return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
     };
-    const body = list.map((c) =>
-      [c.submitted ? c.rank : "", c.hallTicket, c.name, c.submitted ? c.score : "",
-       c.submitted ? "yes" : "no", c.submittedAt ? new Date(c.submittedAt).toLocaleString() : ""]
-        .map(escape).join(",")
-    );
-    const csv = [header.join(","), ...body].join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
+    const csv = resultTable(data).rows.map((r) => r.map(escape).join(",")).join("\r\n");
+    // The byte-order mark is what makes Excel read the file as UTF-8. Without
+    // it, a name in Telugu opens as a row of question marks.
+    const url = URL.createObjectURL(new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `results-exam-${examId}.csv`;
+    a.download = `${fileBase(data, examId)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const exportExcel = () => {
+    const { cols, rows: table } = resultTable(data);
+    const sheet = XLSX.utils.aoa_to_sheet(table);
+    sheet["!cols"] = cols.map((c) => ({ wch: c.width }));
+    // Keeps the heading row in view while scrolling a long class list.
+    sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+    const book = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(book, sheet, "Results");
+    XLSX.writeFile(book, `${fileBase(data, examId)}.xlsx`);
   };
 
   if (!examId) {
@@ -262,13 +312,22 @@ const Reports = () => {
                 className="h-11 w-72 rounded-exam border border-gray-300 pl-9 pr-3 text-sm outline-none focus:border-primary-600"
               />
             </div>
-            <button
-              onClick={exportCsv}
-              disabled={!data?.candidates?.length}
-              className="exam-action-quiet flex h-11 items-center gap-2"
-            >
-              <FiDownload /> Export CSV
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={exportExcel}
+                disabled={!data?.candidates?.length}
+                className="exam-action-primary flex h-11 items-center gap-2"
+              >
+                <FiDownload /> Download Excel
+              </button>
+              <button
+                onClick={exportCsv}
+                disabled={!data?.candidates?.length}
+                className="exam-action-quiet flex h-11 items-center gap-2"
+              >
+                <FiDownload /> CSV
+              </button>
+            </div>
           </div>
 
           <div className="overflow-hidden rounded-exam border border-gray-200 bg-white">
@@ -292,7 +351,9 @@ const Reports = () => {
                       <th className="exam-label px-5 py-3 text-right">Rank</th>
                       <th className="exam-label px-5 py-3">Hall ticket</th>
                       <th className="exam-label px-5 py-3">Candidate</th>
-                      <th className="exam-label px-5 py-3 text-right">Score</th>
+                      {showBranchYear && <th className="exam-label px-5 py-3">Branch / Year</th>}
+                      <th className="exam-label px-5 py-3 text-right">Marks</th>
+                      <th className="exam-label px-5 py-3 text-right">%</th>
                       <th className="exam-label px-5 py-3">Status</th>
                       <th className="exam-label px-5 py-3">Submitted</th>
                     </tr>
@@ -305,8 +366,16 @@ const Reports = () => {
                         </td>
                         <td className="tabular px-5 py-3 text-gray-700">{c.hallTicket}</td>
                         <td className="px-5 py-3 text-gray-900">{c.name}</td>
+                        {showBranchYear && (
+                          <td className="px-5 py-3 text-sm text-gray-600">
+                            {[c.branch, c.year].filter(Boolean).join(" · ") || "—"}
+                          </td>
+                        )}
                         <td className="tabular px-5 py-3 text-right text-gray-900">
-                          {c.submitted ? c.score : "—"}
+                          {c.submitted ? `${c.score}${data?.totalMarks ? ` / ${data.totalMarks}` : ""}` : "—"}
+                        </td>
+                        <td className="tabular px-5 py-3 text-right text-gray-900">
+                          {c.submitted && c.percentage != null ? `${c.percentage}%` : "—"}
                         </td>
                         <td className="px-5 py-3">
                           <span className={`rounded-exam px-2 py-1 text-xs font-semibold ${
