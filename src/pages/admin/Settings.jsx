@@ -70,29 +70,22 @@ const Settings = () => {
   const [deleting, setDeleting] = useState(false);
 
   /*
-   * An exam somebody has sat is refused at first. The admin may then choose to
-   * delete the results with it -- a test paper, or attempts nobody needs -- as
-   * a second step that names how many results go, behind its own tick box.
+   * Deletes the exam with everything in it, results included, once its title
+   * is typed. The college decides; the screen does not argue about how many
+   * candidates have sat it. The server still refuses while anyone is writing.
    */
-  const [hasResults, setHasResults] = useState(null);   // the server's refusal, when it had results
-  const [resultsUnderstood, setResultsUnderstood] = useState(false);
-
-  const deleteExam = async (includeResults = false) => {
+  const [deleteError, setDeleteError] = useState("");
+  const deleteExam = async () => {
     setDeleting(true);
-    setExamError("");
+    setDeleteError("");
     try {
-      await api.del(`/admin/exam/${examId}${includeResults ? "?includeResults=true" : ""}`);
+      await api.del(`/admin/exam/${examId}?includeResults=true`);
       // The console works on "the exam you are on", and that exam is gone.
       localStorage.removeItem("examId");
       localStorage.removeItem("slotId");
       window.location.href = appPath("/admin/dashboard");
     } catch (e) {
-      if (e.code === "HAS_RESULTS") {
-        setHasResults(e.message);
-        setResultsUnderstood(false);
-      } else {
-        setExamError(e.message || "That exam could not be deleted.");
-      }
+      setDeleteError(e.message || "That exam could not be deleted.");
       setDeleting(false);
     }
   };
@@ -507,16 +500,17 @@ const Settings = () => {
               <h2 className="font-semibold text-red-900">Delete this exam</h2>
               <p className="mt-1 text-sm text-gray-600">
                 Removes <span className="font-semibold">{exam.title}</span> along with its
-                questions, sections, schedule and enrolments. There is no undo.
+                questions, sections, schedule, enrolments, and every candidate's answers and
+                marks. There is no undo — download the results first if you need them.
               </p>
             </div>
 
             <div className="px-6 py-5">
-              <p className="mb-4 rounded-exam bg-gray-50 px-4 py-3 text-sm text-gray-700">
-                If candidates have already sat it, you are asked again before their answers and
-                marks are deleted with it. To keep their results, unpublish it instead: it
-                disappears from candidates without disappearing from Results.
-              </p>
+              {deleteError && (
+                <p className="mb-4 flex items-start gap-2 rounded-exam bg-red-50 px-4 py-3 text-sm text-red-800">
+                  <FiAlertTriangle className="mt-0.5 shrink-0" /> {deleteError}
+                </p>
+              )}
 
               {!confirmDelete ? (
                 <button
@@ -536,41 +530,9 @@ const Settings = () => {
                     placeholder={exam.title}
                     className="w-full max-w-sm rounded-exam border border-gray-300 px-4 py-2 text-sm outline-none focus:border-red-500"
                   />
-                  {hasResults ? (
-                    <div className="space-y-3 rounded-exam border border-red-200 bg-red-50 px-4 py-4">
-                      <p className="text-sm font-medium text-red-900">{hasResults}</p>
-                      <label className="flex items-start gap-2 text-sm text-red-900">
-                        <input
-                          type="checkbox"
-                          checked={resultsUnderstood}
-                          onChange={(e) => setResultsUnderstood(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded border-red-300 text-red-600"
-                        />
-                        <span>
-                          Delete their answers and marks too. They will be gone from Results and the
-                          Excel download, and cannot be brought back.
-                        </span>
-                      </label>
-                      <div className="flex items-center gap-3">
-                        <button
-                          onClick={() => deleteExam(true)}
-                          disabled={deleting || !resultsUnderstood || typedTitle.trim() !== (exam.title || "").trim()}
-                          className="rounded-exam bg-red-700 px-4 py-2 text-sm font-semibold text-white hover:bg-red-800 disabled:opacity-40"
-                        >
-                          {deleting ? "Deleting…" : "Delete exam and its results"}
-                        </button>
-                        <button
-                          onClick={() => { setHasResults(null); setConfirmDelete(false); }}
-                          className="text-sm font-semibold text-gray-500 hover:text-gray-800"
-                        >
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
                   <div className="flex items-center gap-3">
                     <button
-                      onClick={() => deleteExam(false)}
+                      onClick={deleteExam}
                       disabled={deleting || typedTitle.trim() !== (exam.title || "").trim()}
                       className="rounded-exam bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-40"
                     >
@@ -583,7 +545,6 @@ const Settings = () => {
                       Cancel
                     </button>
                   </div>
-                  )}
                 </div>
               )}
             </div>

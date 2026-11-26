@@ -220,7 +220,10 @@ const Instructions = () => {
         navigate("/exam", { replace: true });
         return;
       } catch (e) {
-        if (e.status === 409 && tries < 10) {
+        // Entry closed or already handed in are answers, not a server a beat
+        // behind the countdown: shown at once, never retried.
+        const final = e.code === "ENTRY_CLOSED" || e.code === "ALREADY_SUBMITTED";
+        if (e.status === 409 && !final && tries < 10) {
           await new Promise((r) => setTimeout(r, 2000));
           continue;
         }
