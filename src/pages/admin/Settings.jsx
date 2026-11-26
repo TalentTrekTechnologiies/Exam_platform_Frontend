@@ -141,7 +141,7 @@ const Settings = () => {
         duration: minutes, enableCamera: !!exam.enableCamera, enableMic: !!exam.enableMic,
       }));
       setDurationDraft(null);
-      setNotice({ tone: "ok", text: `Duration saved: ${minutes} minutes for everyone who starts from now on.` });
+      setNotice({ tone: "ok", text: `Duration saved: ${minutes} minutes, including for candidates writing now.` });
     } catch (e) {
       setNotice({ tone: "error", text: e.message || "The duration could not be saved." });
     } finally {
@@ -487,8 +487,9 @@ const Settings = () => {
               </button>
             </div>
             <p className="mt-3 text-xs text-gray-500">
-              Candidates already writing keep the time they started with. On a paper with timed
-              sections, keep this equal to the sections' total.
+              Applies to candidates writing now too: each is timed from when they started, so
+              anyone already past the new time is finished straight away, with their answers
+              saved. On a paper with timed sections, keep this equal to the sections' total.
             </p>
           </div>
         )}
