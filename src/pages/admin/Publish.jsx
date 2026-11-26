@@ -218,13 +218,14 @@ const Publish = () => {
                   <button
                     onClick={preparePapers}
                     disabled={preparing}
-                    className="exam-action-primary flex items-center gap-2"
+                    className="exam-action-quiet flex items-center gap-2"
                   >
                     <FiFileText />
-                    {preparing ? "Preparing…" : "Prepare papers now"}
+                    {preparing ? "Preparing…" : "Prepare now instead of waiting"}
                   </button>
                   <span className="text-xs text-amber-900">
-                    Safe to re-run — papers already built are left alone, so late enrolments just get added.
+                    Optional — the server does this by itself every couple of minutes. Refresh this
+                    page to see Papers ready go up.
                   </span>
                 </div>
               )}
