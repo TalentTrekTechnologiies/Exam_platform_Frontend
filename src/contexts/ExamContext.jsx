@@ -137,6 +137,13 @@ export const ExamProvider = ({ children }) => {
     if (!id) return;
     setStatus("LOADING");
     setError(null);
+    // This provider wraps the whole app and outlives any one candidate. A
+    // submit left this set for good, so on a shared machine the NEXT
+    // candidate's Submit returned "done" without ever reaching the server --
+    // their paper stayed open with minutes on the clock -- and their answers
+    // were never sent in the background either, because the flush stands
+    // down while a submit is running. Every attempt starts clear.
+    submitting.current = false;
 
     try {
       const [paper, saved, clock, code] = await Promise.all([

@@ -46,6 +46,8 @@ const Result = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
+  // The paper is still open: send them back to it, not to the sign-in page.
+  const [stillOpen, setStillOpen] = useState(false);
 
   useEffect(() => {
     const attemptId = localStorage.getItem("attemptId");
@@ -55,7 +57,8 @@ const Result = () => {
       .then(setResult)
       .catch((e) => {
         if (e instanceof ApiError && e.code === "RESULT_NOT_READY") {
-          setError("Your exam is still in progress. Submit it to see your result.");
+          setError("Your exam is still in progress. Go back to it and press Submit to finish.");
+          setStillOpen(true);
         } else {
           setError(e.message || "We could not load your result.");
         }
@@ -114,9 +117,15 @@ const Result = () => {
         <FiAlertCircle className="text-4xl text-amber-500" />
         <h1 className="text-lg font-semibold text-gray-900">Result unavailable</h1>
         <p className="max-w-md text-sm text-gray-500">{error}</p>
-        <button onClick={() => { clearStudentSession(); navigate("/verify"); }} className="exam-action-primary px-6">
-          Back to start
-        </button>
+        {stillOpen ? (
+          <button onClick={() => navigate("/exam", { replace: true })} className="exam-action-primary px-6">
+            Back to my exam
+          </button>
+        ) : (
+          <button onClick={() => { clearStudentSession(); navigate("/verify"); }} className="exam-action-primary px-6">
+            Back to start
+          </button>
+        )}
       </div>
     );
   }
