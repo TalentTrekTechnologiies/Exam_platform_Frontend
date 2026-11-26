@@ -69,7 +69,15 @@ const Verification = () => {
       // stale attemptId would cross the wires. Deliberately targeted rather than
       // localStorage.clear(): an invigilator is often signed in as admin on the
       // same browser, and wiping everything would silently log them out.
-      clearStudentSession();
+      //
+      // Only when somebody else is signing in. The same candidate coming back
+      // after a power cut or a crashed browser still has answers queued on
+      // this machine that never reached the server; clearing them here lost
+      // exactly the work the queue exists to protect.
+      const sameCandidate =
+        localStorage.getItem("studentId") === String(data.studentId)
+        && localStorage.getItem("student_examId") === String(data.examId);
+      if (!sameCandidate) clearStudentSession();
 
       localStorage.setItem("hallTicket", hallTicket);
       localStorage.setItem("studentName", data.studentName || name);
@@ -148,7 +156,7 @@ const Verification = () => {
                     <span className="mt-0.5 block text-xs text-slate-500">
                       {c.duration ? `${c.duration} minutes` : ""}
                       {c.opensAt ? ` · opens ${String(c.opensAt).replace("T", " ").slice(0, 16)}` : ""}
-                      {c.closesAt ? ` · closes ${String(c.closesAt).replace("T", " ").slice(0, 16)}` : ""}
+                      {c.closesAt ? ` · last entry ${String(c.closesAt).replace("T", " ").slice(0, 16)}` : ""}
                     </span>
                   </span>
                   <FiArrowRight className="shrink-0 text-slate-400" />

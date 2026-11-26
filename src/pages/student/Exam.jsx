@@ -192,7 +192,20 @@ const Exam = () => {
     statusOf, sections, counts, markedForReview,
   } = useExam();
 
-  const [currentIndex, setCurrentIndex] = useState(0);
+  // Where they were. A refresh, a crash or signing back in after a dropped
+  // connection reopens the same question instead of question 1.
+  const positionKey = attemptId ? `exam_position_${attemptId}` : null;
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const saved = Number(positionKey && localStorage.getItem(positionKey));
+    return Number.isInteger(saved) && saved > 0 ? saved : 0;
+  });
+  useEffect(() => {
+    if (positionKey) localStorage.setItem(positionKey, String(currentIndex));
+  }, [positionKey, currentIndex]);
+  // A saved position past the end of the paper (it changed) falls back to the start.
+  useEffect(() => {
+    if (questions.length && currentIndex >= questions.length) setCurrentIndex(0);
+  }, [questions.length]); // eslint-disable-line react-hooks/exhaustive-deps
   const [showSummary, setShowSummary] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [examInfo, setExamInfo] = useState(null);
@@ -833,7 +846,8 @@ const Exam = () => {
 
       {syncState === "offline" && (
         <div className="flex items-center justify-center gap-2 bg-amber-500 px-6 py-1.5 text-[13px] font-medium text-amber-950">
-          <FiWifiOff /> Connection lost — your answers are saved and will sync automatically.
+          <FiWifiOff /> Connection lost — your answers are kept on this computer and will sync automatically.
+          Time lost while you are offline is given back when you reconnect.
         </div>
       )}
 

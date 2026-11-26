@@ -305,6 +305,9 @@ export const ExamProvider = ({ children }) => {
 
   // ── Clock ─────────────────────────────────────────────────────────────────
 
+  // The clock poll, so the countdown reaching zero can ask the server directly.
+  const syncClock = useRef(null);
+
   useEffect(() => {
     if (status !== "READY" || !attemptId) return;
 
@@ -321,9 +324,15 @@ export const ExamProvider = ({ children }) => {
       }
     };
 
+    syncClock.current = sync;
+
     // Once immediately: waiting a full sync interval would show a sectional
     // candidate no section clock for the first twenty seconds of their paper.
     sync();
+
+    // Back online: ask at once, so time returned for the drop shows now rather
+    // than at the next scheduled poll.
+    window.addEventListener("online", sync);
 
     const syncTimer = setInterval(sync, CLOCK_SYNC_MS);
     const tickTimer = setInterval(() => {
@@ -336,13 +345,21 @@ export const ExamProvider = ({ children }) => {
     }, 1000);
 
     return () => {
+      window.removeEventListener("online", sync);
       clearInterval(syncTimer);
       clearInterval(tickTimer);
     };
   }, [status, attemptId]);
 
+  /*
+   * This screen's countdown reaching zero is a question for the server, not an
+   * answer. Offline, the local count keeps running while the server is owed
+   * the time the drop costs; submitting on it alone ended papers that still
+   * had time, or failed with "could not submit" until the line came back.
+   * The server says expired when it is, and the poll submits then.
+   */
   useEffect(() => {
-    if (status === "READY" && remainingSeconds === 0 && onExpiry.current) onExpiry.current();
+    if (status === "READY" && remainingSeconds === 0) syncClock.current?.();
   }, [remainingSeconds, status]);
 
   /**
