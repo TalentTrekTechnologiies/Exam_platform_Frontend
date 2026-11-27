@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { FiAlertTriangle } from "react-icons/fi";
 
 /**
@@ -27,6 +27,17 @@ const COLUMNS = [
 const SubmitSummary = ({ sections, counts, questionCount, timeLeftLabel, error, busy, onCancel, onConfirm }) => {
   const answered = counts.answered + counts.answeredMarked;
   const remaining = questionCount - answered;
+
+  /*
+   * A paper with hardly anything answered is one deliberate step further from
+   * ending. Papers were being submitted within a minute of opening with one
+   * answer or none -- a stray click, a confused candidate, someone testing --
+   * and a submit cannot be undone. Under a quarter answered, the candidate
+   * ticks that they understand before Submit works. A box, not typing: the
+   * exam screen closes the keyboard to everything but answering keys.
+   */
+  const fewAnswered = questionCount > 0 && answered < Math.ceil(questionCount / 4);
+  const [understood, setUnderstood] = useState(false);
 
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center bg-chrome/70 p-4 backdrop-blur-sm">
@@ -88,6 +99,21 @@ const SubmitSummary = ({ sections, counts, questionCount, timeLeftLabel, error, 
             </div>
           )}
 
+          {fewAnswered && (
+            <label className="mt-4 flex cursor-pointer items-start gap-3 rounded-exam border border-red-200 bg-red-50 px-4 py-3">
+              <input
+                type="checkbox"
+                checked={understood}
+                onChange={(e) => setUnderstood(e.target.checked)}
+                className="mt-0.5 h-5 w-5 shrink-0 cursor-pointer rounded border-red-300 text-red-600"
+              />
+              <span className="text-sm text-red-900">
+                I understand I have answered only <span className="font-semibold">{answered} of {questionCount}</span>{" "}
+                questions, and once I submit I cannot return to the paper.
+              </span>
+            </label>
+          )}
+
           {error && (
             <p className="mt-4 text-sm font-medium text-status-unanswered">{error}</p>
           )}
@@ -97,7 +123,8 @@ const SubmitSummary = ({ sections, counts, questionCount, timeLeftLabel, error, 
           <button onClick={onCancel} disabled={busy} className="exam-action-quiet px-6">
             Return to paper
           </button>
-          <button onClick={onConfirm} disabled={busy} className="exam-action px-6 bg-status-unanswered border-status-unanswered text-white hover:opacity-90">
+          <button onClick={() => onConfirm(answered)} disabled={busy || (fewAnswered && !understood)}
+                  className="exam-action px-6 bg-status-unanswered border-status-unanswered text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40">
             {busy ? "Submitting…" : "Submit exam"}
           </button>
         </footer>

@@ -840,7 +840,9 @@ const Exam = () => {
           error={submitError}
           busy={submitting}
           onCancel={() => setShowSummary(false)}
-          onConfirm={() => handleSubmit()}
+          // How much was answered rides along in the reason, so the server's
+          // log says "submitted with 1 of 60 answered" without anyone asking.
+          onConfirm={(answered) => handleSubmit(`candidate submitted (${answered}/${questions.length} answered)`)}
         />
       )}
 
