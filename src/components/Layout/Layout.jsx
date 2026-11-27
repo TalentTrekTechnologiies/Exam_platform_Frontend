@@ -3,7 +3,7 @@ import React, { useState, useEffect } from "react";
 import Sidebar from "./Sidebar";
 import TopNav from "./TopNav";
 import MobileNav from "./MobileNav";
-import { readAdmin } from "../../lib/api";
+import { readAdmin, api, ApiError } from "../../lib/api";
 
 const Layout = ({ children, title, subtitle }) => {
   // ADDED: Retrieve admin data from localStorage
@@ -11,6 +11,26 @@ const Layout = ({ children, title, subtitle }) => {
 
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isMobile, setIsMobile] = useState(false);
+
+  /*
+   * The exam every admin page works on is remembered in this browser. When it
+   * is deleted -- by someone else, or from another computer -- every page in
+   * this browser answered "Exam not found" and nothing offered a way out,
+   * which read as the exams having vanished. A remembered exam that no longer
+   * exists, or belongs to another account, is forgotten here, and the page
+   * reloads to its exam list.
+   */
+  useEffect(() => {
+    const examId = localStorage.getItem("examId");
+    if (!examId) return;
+    api.get(`/admin/exam/${examId}`).catch((e) => {
+      if (e instanceof ApiError && (e.status === 404 || e.status === 403)) {
+        localStorage.removeItem("examId");
+        localStorage.removeItem("slotId");
+        window.location.reload();
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
